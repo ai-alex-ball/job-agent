@@ -2,11 +2,11 @@ import secrets
 import sqlite3
 import json
 from datetime import datetime, timezone
-from config import DB_PATH
+import config
 
 
 def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -58,6 +58,8 @@ def init_db():
         ("applied_at",             "TEXT"),
         ("application_email_used", "TEXT"),
         ("dream_employer",         "INTEGER DEFAULT 0"),
+        ("browser_apply_status",   "TEXT"),
+        ("browser_apply_error",    "TEXT"),
     ]
     for col, definition in new_cols:
         if col not in existing:
@@ -268,6 +270,43 @@ def mark_manual_required(row_id: int):
     conn.execute("UPDATE jobs SET status = 'manual_required' WHERE id = ?", (row_id,))
     conn.commit()
     conn.close()
+
+
+def mark_browser_applied(row_id: int):
+    conn = get_conn()
+    conn.execute(
+        """UPDATE jobs SET
+               status               = 'browser_applied',
+               browser_apply_status = 'success',
+               applied_at           = ?
+           WHERE id = ?""",
+        (datetime.now(timezone.utc).isoformat(), row_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def mark_browser_apply_failed(row_id: int, error: str):
+    conn = get_conn()
+    conn.execute(
+        """UPDATE jobs SET
+               browser_apply_status = 'failed',
+               browser_apply_error  = ?
+           WHERE id = ?""",
+        (error[:500], row_id),  # cap at 500 chars
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_manual_required_jobs() -> list[dict]:
+    """Jobs needing manual or browser-based application."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM jobs WHERE status = 'manual_required' ORDER BY score DESC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 def get_applied_jobs_today() -> list[dict]:
