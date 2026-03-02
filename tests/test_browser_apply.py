@@ -243,3 +243,93 @@ class TestGreenhouseFiller:
         with patch("builtins.input", return_value="YES"):
             success, msg = applier._apply_greenhouse(page, job)
         assert success is True
+
+
+class TestLeverFiller:
+    """
+    Lever form selectors:
+      Name          : input[name="name"]
+      Email         : input[name="email"]
+      Phone         : input[name="phone"]
+      LinkedIn      : input[name="urls[LinkedIn]"]
+      Org (company) : input[name="org"]
+      Resume upload : input[type="file"]
+      Cover letter  : textarea[name="comments"]
+      Submit        : button[type="submit"]
+    """
+
+    def _make_page(self):
+        page = MagicMock()
+        _cache = {}
+        def locator_side_effect(selector):
+            if selector not in _cache:
+                loc = MagicMock()
+                loc.count.return_value = 1
+                loc.first = MagicMock()
+                _cache[selector] = loc
+            return _cache[selector]
+        page.locator.side_effect = locator_side_effect
+        page.wait_for_selector.return_value = MagicMock()
+        return page
+
+    def _make_job(self, cv_path=None):
+        return {
+            "id": 2,
+            "title": "Innovation Director",
+            "company": "Stripe",
+            "url": "https://jobs.lever.co/stripe/abc/apply",
+            "cover_letter": "Dear Hiring Team, I am delighted to apply.",
+            "cv_path": cv_path,
+        }
+
+    def test_fills_name_email_phone(self):
+        applier = BrowserApplier()
+        page = self._make_page()
+        with patch("builtins.input", return_value="y"):
+            applier._apply_lever(page, self._make_job())
+        page.locator('input[name="name"]').fill.assert_called_once_with("Jane Doe")
+        page.locator('input[name="email"]').fill.assert_called_once_with("jane.doe@example.com")
+        page.locator('input[name="phone"]').fill.assert_called_once_with("07700 900123")
+
+    def test_fills_linkedin_url(self):
+        applier = BrowserApplier()
+        page = self._make_page()
+        with patch("builtins.input", return_value="y"):
+            applier._apply_lever(page, self._make_job())
+        page.locator('input[name="urls[LinkedIn]"]').fill.assert_called_once_with(
+            applier.profile["linkedin"]
+        )
+
+    def test_fills_cover_letter(self):
+        applier = BrowserApplier()
+        page = self._make_page()
+        job = self._make_job()
+        with patch("builtins.input", return_value="y"):
+            applier._apply_lever(page, job)
+        page.locator('textarea[name="comments"]').fill.assert_called_once_with(
+            job["cover_letter"]
+        )
+
+    def test_user_confirmation_yes_clicks_submit(self):
+        applier = BrowserApplier()
+        page = self._make_page()
+        with patch("builtins.input", return_value="y"):
+            success, msg = applier._apply_lever(page, self._make_job())
+        assert success is True
+        page.locator('button[type="submit"]').click.assert_called_once()
+
+    def test_user_confirmation_no_returns_cancelled(self):
+        applier = BrowserApplier()
+        page = self._make_page()
+        with patch("builtins.input", return_value="n"):
+            success, msg = applier._apply_lever(page, self._make_job())
+        assert success is False
+        assert "cancel" in msg.lower()
+        page.locator('button[type="submit"]').click.assert_not_called()
+
+    def test_user_confirmation_yes_case_insensitive(self):
+        applier = BrowserApplier()
+        page = self._make_page()
+        with patch("builtins.input", return_value="YES"):
+            success, msg = applier._apply_lever(page, self._make_job())
+        assert success is True

@@ -190,7 +190,50 @@ class BrowserApplier:
         return True, "Applied via Greenhouse form"
 
     def _apply_lever(self, page: Page, job: dict) -> tuple[bool, str]:
-        raise NotImplementedError
+        """Fill a standard Lever application form."""
+        try:
+            page.wait_for_selector('input[name="name"]', timeout=15_000)
+        except Exception:
+            return False, "Lever form fields not found"
+
+        page.locator('input[name="name"]').fill(self.profile["name"])
+        page.locator('input[name="email"]').fill(self.profile["email"])
+        page.locator('input[name="phone"]').fill(self.profile["phone"])
+        page.locator('input[name="urls[LinkedIn]"]').fill(self.profile["linkedin"])
+
+        # Current organisation (optional on some Lever forms)
+        org_loc = page.locator('input[name="org"]')
+        if org_loc.count():
+            org_loc.fill("Independent / Open to Opportunities")
+
+        # Resume upload
+        cv_path = job.get("cv_path")
+        if cv_path:
+            full_path = BASE_DIR / cv_path
+            if full_path.exists() and page.locator('input[type="file"]').count():
+                page.locator('input[type="file"]').set_input_files(str(full_path))
+
+        # Cover letter
+        cover = job.get("cover_letter") or ""
+        if cover:
+            page.locator('textarea[name="comments"]').fill(cover)
+
+        # --- Confirmation before submit ---
+        print(f"\n[BrowserApply] About to submit Lever application:")
+        print(f"  Job      : {job.get('title')} at {job.get('company')}")
+        print(f"  URL      : {job.get('url')}")
+        print(f"  Name     : {self.profile['name']}")
+        print(f"  Email    : {self.profile['email']}")
+        print(f"  LinkedIn : {self.profile['linkedin']}")
+        print(f"  CV       : {cv_path or '(none)'}")
+        print(f"  Cover    : {'yes' if cover else '(none)'}")
+        answer = input("\nSubmit this application? [y/N]: ").strip().lower()
+        if answer not in ("y", "yes"):
+            return False, "cancelled by user"
+
+        page.locator('button[type="submit"]').click()
+        page.wait_for_load_state("networkidle", timeout=15_000)
+        return True, "Applied via Lever form"
 
     def _apply_generic(self, page: Page, job: dict) -> tuple[bool, str]:
         raise NotImplementedError
