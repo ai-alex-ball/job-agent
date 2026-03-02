@@ -9,14 +9,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 @pytest.fixture
 def db(tmp_path, monkeypatch):
-    """In-memory DB wired through the real init_db()."""
+    """Isolated DB fixture — patches config.DB_PATH so get_conn() uses a temp file."""
     db_file = tmp_path / "test.db"
-    monkeypatch.setenv("DB_PATH", str(db_file))
-    # Reload config so DB_PATH picks up the monkeypatched env var
-    import importlib
     import config as cfg
-    cfg.DB_PATH = db_file
     import database as db_mod
+    monkeypatch.setattr(cfg, "DB_PATH", db_file)
     db_mod.init_db()
     return db_mod
 
@@ -46,10 +43,11 @@ def test_mark_browser_applied_sets_status(db):
     job_id = _insert_manual(db)
     db.mark_browser_applied(job_id)
     conn = db.get_conn()
-    row = conn.execute("SELECT status, browser_apply_status FROM jobs WHERE id=?", (job_id,)).fetchone()
+    row = conn.execute("SELECT status, browser_apply_status, applied_at FROM jobs WHERE id=?", (job_id,)).fetchone()
     conn.close()
     assert row[0] == "browser_applied"
     assert row[1] == "success"
+    assert row[2] is not None  # applied_at was stamped
 
 
 def test_mark_browser_apply_failed_leaves_manual(db):

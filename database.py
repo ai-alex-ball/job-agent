@@ -314,7 +314,7 @@ def get_applied_jobs_today() -> list[dict]:
     conn = get_conn()
     rows = conn.execute(
         """SELECT * FROM jobs
-           WHERE status = 'applied'
+           WHERE status IN ('applied', 'browser_applied')
              AND date(applied_at) = date('now')
            ORDER BY applied_at DESC"""
     ).fetchall()
