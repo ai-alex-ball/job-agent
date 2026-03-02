@@ -21,7 +21,10 @@ from database import (
     mark_applied,
     mark_skipped,
     mark_manual_required,
+    mark_browser_applied,
+    mark_browser_apply_failed,
 )
+from browser_apply import BrowserApplier, detect_portal
 from apply import send_application
 from config import FLASK_PORT
 
@@ -31,7 +34,21 @@ app = Flask(__name__)
 _TERMINAL = {"applied", "skipped", "manual_required"}
 
 
-def _no_email_page(title: str, company: str, job_url: str) -> str:
+def _no_email_page(title: str, company: str, job_url: str, token: str, portal: str) -> str:
+    auto_apply_html = ""
+    if portal in ("greenhouse", "lever", "generic"):
+        label = "Auto-Apply (Experimental)" if portal == "generic" else "Auto-Apply"
+        auto_apply_html = f"""
+  <a href="/browser-apply/{token}"
+     style="display:inline-block;margin-top:12px;background:#2563eb;color:#fff;
+            padding:12px 28px;border-radius:8px;text-decoration:none;
+            font-size:15px;font-weight:600">
+    {label} &rarr;
+  </a>
+  <p style="font-size:13px;color:#6b7280;margin-top:8px">
+    Attempts to fill the application form automatically
+  </p>"""
+
     return f"""<!DOCTYPE html>
 <html>
 <head>
@@ -45,7 +62,7 @@ def _no_email_page(title: str, company: str, job_url: str) -> str:
   <p style="font-size:16px;color:#374151;line-height:1.6">
     No application email address was found in the listing for
     <strong>{title}</strong> at <strong>{company}</strong>.<br><br>
-    Please apply manually via the job listing.
+    Please apply manually via the job listing, or try auto-apply below.
   </p>
   <a href="{job_url}" target="_blank"
      style="display:inline-block;margin-top:24px;background:#111827;color:#fff;
@@ -53,6 +70,7 @@ def _no_email_page(title: str, company: str, job_url: str) -> str:
             font-size:15px;font-weight:600">
     View &amp; Apply on Listing &rarr;
   </a>
+  {auto_apply_html}
   <p style="margin-top:32px">
     <a href="javascript:window.close()"
        style="color:#9ca3af;font-size:14px;text-decoration:none">Close this tab</a>
@@ -106,7 +124,8 @@ def approve(token: str):
 
     if job["status"] == "manual_required":
         job_url = job.get("url", "#")
-        return _no_email_page(job["title"], job["company"], job_url)
+        portal = detect_portal(job_url)
+        return _no_email_page(job["title"], job["company"], job_url, token, portal)
 
     mark_approved(job["id"])
     success, result = send_application(job)
@@ -122,7 +141,9 @@ def approve(token: str):
 
     if result == "no_email":
         mark_manual_required(job["id"])
-        return _no_email_page(job["title"], job["company"], job.get("url", "#"))
+        job_url = job.get("url", "#")
+        portal = detect_portal(job_url)
+        return _no_email_page(job["title"], job["company"], job_url, token, portal)
 
     # Any other failure — leave as 'approved' so it can be retried
     return _page(
@@ -154,6 +175,69 @@ def skip(token: str):
         f"<strong>{job['title']}</strong> at <strong>{job['company']}</strong> "
         f"has been skipped and will not be applied to.",
         "#6b7280",
+    )
+
+
+@app.route("/browser-apply/<token>")
+def browser_apply_route(token: str):
+    job = get_job_by_token(token)
+    if not job:
+        abort(404)
+
+    if job["status"] == "browser_applied":
+        return _page(
+            "Already Applied",
+            f"This application was already submitted automatically for "
+            f"<strong>{job['title']}</strong> at <strong>{job['company']}</strong>.",
+            "#2563eb",
+        )
+
+    if job["status"] not in ("manual_required", "approved"):
+        return _page(
+            "Not Available",
+            f"This job has status <strong>{job['status']}</strong> and cannot be auto-applied.",
+            "#6b7280",
+        )
+
+    applier = BrowserApplier()
+    success, msg = applier.apply(job)
+
+    if success:
+        mark_browser_applied(job["id"])
+        return _page(
+            "Auto-Apply Submitted",
+            f"Application for <strong>{job['title']}</strong> at "
+            f"<strong>{job['company']}</strong> was submitted automatically.",
+        )
+
+    if "unsupported" in msg:
+        return _page(
+            "Portal Not Supported",
+            f"Workday and some portals require manual application.<br>"
+            f"<a href='{job.get('url', '#')}' target='_blank' "
+            f"style='color:#2563eb'>Apply on the job listing &rarr;</a>",
+            "#d97706",
+        )
+
+    if "cancelled by user" in msg:
+        return _page(
+            "Cancelled",
+            f"Auto-apply for <strong>{job['title']}</strong> at "
+            f"<strong>{job['company']}</strong> was cancelled.<br>"
+            f"<a href='{job.get('url', '#')}' target='_blank' "
+            f"style='color:#2563eb'>Apply manually on the listing &rarr;</a>",
+            "#6b7280",
+        )
+
+    mark_browser_apply_failed(job["id"], msg)
+    return _page(
+        "Auto-Apply Failed",
+        f"Could not automatically submit the application for "
+        f"<strong>{job['title']}</strong> at <strong>{job['company']}</strong>.<br>"
+        f"<span style='font-size:13px;color:#6b7280'>{msg[:200]}</span><br><br>"
+        f"<a href='{job.get('url', '#')}' target='_blank' "
+        f"style='color:#2563eb'>Apply manually on the listing &rarr;</a>",
+        "#dc2626",
     )
 
 
