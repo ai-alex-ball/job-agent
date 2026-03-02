@@ -34,3 +34,113 @@ def detect_portal(url: str | None) -> str:
         if any(p in url_lower for p in patterns):
             return portal
     return "generic"
+
+
+# ---------------------------------------------------------------------------
+# BrowserApplier
+# ---------------------------------------------------------------------------
+
+from playwright.sync_api import sync_playwright, Page, BrowserContext
+
+
+class BrowserApplier:
+    """Fills and submits job application forms via Playwright."""
+
+    def __init__(self):
+        self.profile = self._load_profile()
+        SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # ------------------------------------------------------------------
+    # Profile helpers
+    # ------------------------------------------------------------------
+
+    def _load_profile(self) -> dict:
+        raw = json.loads(PROFILE_PATH.read_text())
+        personal = raw.get("personal", {})
+        name = personal.get("name", "")
+        parts = name.split(None, 1)
+        return {
+            "name":       name,
+            "first_name": parts[0] if parts else "",
+            "last_name":  parts[1] if len(parts) > 1 else "",
+            "email":      personal.get("email", ""),
+            "phone":      personal.get("phone", ""),
+            "linkedin":   personal.get("linkedin", ""),
+            "location":   personal.get("location", ""),
+        }
+
+    # ------------------------------------------------------------------
+    # Public entry point
+    # ------------------------------------------------------------------
+
+    def apply(self, job: dict) -> tuple[bool, str]:
+        """
+        Attempt to fill and submit the application form for a job.
+
+        Returns:
+            (True, "Applied successfully")  on success
+            (False, reason_string)          on failure or unsupported portal
+        """
+        url = job.get("url", "")
+        portal = detect_portal(url)
+
+        if portal == "workday":
+            return False, "unsupported: Workday requires manual application"
+
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch(headless=PLAYWRIGHT_HEADLESS)
+                context = browser.new_context(
+                    accept_downloads=True,
+                    user_agent=(
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/120.0.0.0 Safari/537.36"
+                    ),
+                )
+                page = context.new_page()
+                page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+
+                if portal == "greenhouse":
+                    success, msg = self._apply_greenhouse(page, job)
+                elif portal == "lever":
+                    success, msg = self._apply_lever(page, job)
+                else:
+                    success, msg = self._apply_generic(page, job)
+
+                if not success:
+                    self._screenshot(page, job)
+
+                context.close()
+                browser.close()
+                return success, msg
+
+        except Exception as exc:
+            return False, str(exc)
+
+    # ------------------------------------------------------------------
+    # Screenshot helper
+    # ------------------------------------------------------------------
+
+    def _screenshot(self, page: Page, job: dict):
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        safe_company = re.sub(r"[^\w]", "_", job.get("company", "unknown"))[:24]
+        path = SCREENSHOTS_DIR / f"{safe_company}_{ts}.png"
+        try:
+            page.screenshot(path=str(path))
+            print(f"[BrowserApply] Screenshot saved: {path.name}")
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Portal-specific fillers (stubs — implemented in subsequent tasks)
+    # ------------------------------------------------------------------
+
+    def _apply_greenhouse(self, page: Page, job: dict) -> tuple[bool, str]:
+        raise NotImplementedError
+
+    def _apply_lever(self, page: Page, job: dict) -> tuple[bool, str]:
+        raise NotImplementedError
+
+    def _apply_generic(self, page: Page, job: dict) -> tuple[bool, str]:
+        raise NotImplementedError
