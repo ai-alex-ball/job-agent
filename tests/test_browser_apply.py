@@ -333,3 +333,85 @@ class TestLeverFiller:
         with patch("builtins.input", return_value="YES"):
             success, msg = applier._apply_lever(page, self._make_job())
         assert success is True
+
+
+class TestGenericFiller:
+    """
+    Generic filler tries common field patterns:
+      Email  : input[type="email"]
+      Name   : input with placeholder/aria-label/name containing 'name' (case-insensitive)
+      Resume : input[type="file"]
+      Returns (False, ...) always — never claims full success
+    """
+
+    def _make_page(self, has_email=True, has_name=False, has_file=False):
+        page = MagicMock()
+        _cache = {}
+        def locator_side_effect(selector):
+            if selector not in _cache:
+                loc = MagicMock()
+                if selector == 'input[type="email"]':
+                    loc.count.return_value = 1 if has_email else 0
+                elif any(kw in selector.lower() for kw in ['name']):
+                    loc.count.return_value = 1 if has_name else 0
+                elif selector == 'input[type="file"]':
+                    loc.count.return_value = 1 if has_file else 0
+                else:
+                    loc.count.return_value = 0
+                loc.first = MagicMock()
+                _cache[selector] = loc
+            return _cache[selector]
+        page.locator.side_effect = locator_side_effect
+        return page
+
+    def _make_job(self):
+        return {
+            "id": 3,
+            "title": "Innovation Director",
+            "company": "Acme Corp",
+            "url": "https://careers.acme.com/jobs/123",
+            "cover_letter": "Please consider my application.",
+            "cv_path": None,
+        }
+
+    def test_fills_email_field_when_present(self):
+        applier = BrowserApplier()
+        page = self._make_page(has_email=True)
+        with patch("builtins.input", return_value="y"):
+            applier._apply_generic(page, self._make_job())
+        page.locator('input[type="email"]').fill.assert_called_once_with(
+            "jane.doe@example.com"
+        )
+
+    def test_skips_email_when_not_present(self):
+        applier = BrowserApplier()
+        page = self._make_page(has_email=False)
+        with patch("builtins.input", return_value="y"):
+            applier._apply_generic(page, self._make_job())
+        page.locator('input[type="email"]').fill.assert_not_called()
+
+    def test_always_returns_false(self):
+        """Generic filler never claims full success."""
+        applier = BrowserApplier()
+        page = self._make_page()
+        with patch("builtins.input", return_value="y"):
+            success, msg = applier._apply_generic(page, self._make_job())
+        assert success is False
+
+    def test_user_confirmation_no_returns_cancelled(self):
+        """When user declines, returns (False, 'cancelled by user') and returns immediately."""
+        applier = BrowserApplier()
+        page = self._make_page(has_email=True)
+        with patch("builtins.input", return_value="n"):
+            success, msg = applier._apply_generic(page, self._make_job())
+        assert success is False
+        assert "cancel" in msg.lower()
+
+    def test_return_message_describes_partial_fill(self):
+        """On user confirmation, message describes what was (partially) filled."""
+        applier = BrowserApplier()
+        page = self._make_page(has_email=True)
+        with patch("builtins.input", return_value="y"):
+            success, msg = applier._apply_generic(page, self._make_job())
+        assert success is False
+        assert "partial" in msg.lower() or "generic" in msg.lower()

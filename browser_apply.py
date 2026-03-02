@@ -236,4 +236,52 @@ class BrowserApplier:
         return True, "Applied via Lever form"
 
     def _apply_generic(self, page: Page, job: dict) -> tuple[bool, str]:
-        raise NotImplementedError
+        """
+        Best-effort filler for unknown portal types.
+        Always returns (False, ...) — never claims full success.
+        User must verify the application was submitted correctly.
+        """
+        filled: list[str] = []
+
+        if page.locator('input[type="email"]').count():
+            page.locator('input[type="email"]').fill(self.profile["email"])
+            filled.append("email")
+
+        for name_sel in (
+            'input[placeholder*="name" i]',
+            'input[aria-label*="name" i]',
+            'input[name*="name" i]',
+        ):
+            if page.locator(name_sel).count():
+                page.locator(name_sel).first.fill(self.profile["name"])
+                filled.append("name")
+                break
+
+        cv_path = job.get("cv_path")
+        if cv_path and page.locator('input[type="file"]').count():
+            full_path = BASE_DIR / cv_path
+            if full_path.exists():
+                page.locator('input[type="file"]').set_input_files(str(full_path))
+                filled.append("resume")
+
+        filled_summary = ", ".join(filled) if filled else "nothing"
+
+        # --- Confirmation before submit attempt ---
+        print(f"\n[BrowserApply] Generic form — partial fill for:")
+        print(f"  Job    : {job.get('title')} at {job.get('company')}")
+        print(f"  URL    : {job.get('url')}")
+        print(f"  Filled : {filled_summary}")
+        print(f"  NOTE   : Generic filler cannot guarantee completeness.")
+        print(f"           Please verify the application on the listing after submission.")
+        answer = input("\nAttempt submit anyway? [y/N]: ").strip().lower()
+        if answer not in ("y", "yes"):
+            return False, "cancelled by user"
+
+        # Best-effort submit click
+        for submit_sel in ('button[type="submit"]', 'input[type="submit"]'):
+            submit_loc = page.locator(submit_sel)
+            if submit_loc.count():
+                submit_loc.click()
+                break
+
+        return False, f"partial fill via generic filler: {filled_summary} — verify on listing"
