@@ -86,8 +86,10 @@ class TestBrowserApplierDispatch:
         job = self._make_job("https://boards.greenhouse.io/acme/jobs/1")
         with patch.object(applier, "_apply_greenhouse", return_value=(True, "Applied")) as m:
             with patch("browser_apply.sync_playwright"):
-                applier.apply(job)
+                success, msg = applier.apply(job)
         m.assert_called_once()
+        assert success is True
+        assert msg == "Applied"
 
     def test_routes_lever(self):
         from unittest.mock import patch
@@ -95,8 +97,10 @@ class TestBrowserApplierDispatch:
         job = self._make_job("https://jobs.lever.co/acme/abc")
         with patch.object(applier, "_apply_lever", return_value=(True, "Applied")) as m:
             with patch("browser_apply.sync_playwright"):
-                applier.apply(job)
+                success, msg = applier.apply(job)
         m.assert_called_once()
+        assert success is True
+        assert msg == "Applied"
 
     def test_workday_returns_unsupported(self):
         applier = BrowserApplier()
@@ -111,5 +115,7 @@ class TestBrowserApplierDispatch:
         job = self._make_job("https://careers.acme.com/jobs/123")
         with patch.object(applier, "_apply_generic", return_value=(False, "Partial")) as m:
             with patch("browser_apply.sync_playwright"):
-                applier.apply(job)
+                success, msg = applier.apply(job)
         m.assert_called_once()
+        assert success is False
+        assert msg == "Partial"

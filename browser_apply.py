@@ -95,25 +95,27 @@ class BrowserApplier:
                     user_agent=(
                         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                         "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/120.0.0.0 Safari/537.36"
+                        "Chrome/134.0.0.0 Safari/537.36"
                     ),
                 )
-                page = context.new_page()
-                page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+                try:
+                    page = context.new_page()
+                    page.goto(url, wait_until="domcontentloaded", timeout=30_000)
 
-                if portal == "greenhouse":
-                    success, msg = self._apply_greenhouse(page, job)
-                elif portal == "lever":
-                    success, msg = self._apply_lever(page, job)
-                else:
-                    success, msg = self._apply_generic(page, job)
+                    if portal == "greenhouse":
+                        success, msg = self._apply_greenhouse(page, job)
+                    elif portal == "lever":
+                        success, msg = self._apply_lever(page, job)
+                    else:
+                        success, msg = self._apply_generic(page, job)
 
-                if not success:
-                    self._screenshot(page, job)
+                    if not success:
+                        self._screenshot(page, job)
 
-                context.close()
-                browser.close()
-                return success, msg
+                    return success, msg
+                finally:
+                    context.close()
+                    browser.close()
 
         except Exception as exc:
             return False, str(exc)
