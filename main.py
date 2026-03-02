@@ -12,7 +12,11 @@ from database import (
     get_scored_jobs_for_digest,
     mark_digest_sent,
     get_conn,
+    get_manual_required_jobs,
+    mark_browser_applied,
+    mark_browser_apply_failed,
 )
+from browser_apply import BrowserApplier
 from ingestion import fetch_all_jobs
 from scoring import score_job
 from documents import generate_documents
@@ -181,9 +185,41 @@ def print_status():
     print()
 
 
+def auto_apply():
+    """
+    Batch-process all manual_required jobs using browser automation.
+    Run with: python main.py --auto-apply
+    """
+    init_db()
+    jobs = get_manual_required_jobs()
+    if not jobs:
+        print("[AutoApply] No manual_required jobs found.")
+        return
+
+    print(f"[AutoApply] Processing {len(jobs)} manual_required job(s)...\n")
+    applier = BrowserApplier()
+    success_count = 0
+
+    for job in jobs:
+        label = f"{job['title']} @ {job['company']}"
+        print(f"  Attempting: {label}")
+        ok, msg = applier.apply(job)
+        if ok:
+            mark_browser_applied(job["id"])
+            print(f"    → Applied ✓")
+            success_count += 1
+        else:
+            mark_browser_apply_failed(job["id"], msg)
+            print(f"    → Failed: {msg[:100]}")
+
+    print(f"\n[AutoApply] {success_count}/{len(jobs)} applied successfully.")
+
+
 if __name__ == "__main__":
     if "--status" in sys.argv:
         print_status()
+    elif "--auto-apply" in sys.argv:
+        auto_apply()
     else:
         try:
             run()
