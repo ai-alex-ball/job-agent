@@ -119,3 +119,127 @@ class TestBrowserApplierDispatch:
         m.assert_called_once()
         assert success is False
         assert msg == "Partial"
+
+
+class TestGreenhouseFiller:
+    """
+    Test _apply_greenhouse() with a mocked Playwright Page.
+
+    Greenhouse form field selectors:
+      First name : input#first_name
+      Last name  : input#last_name
+      Email      : input#email
+      Phone      : input#phone
+      Resume     : input[type="file"]
+      Cover text : textarea (first textarea on page)
+      LinkedIn   : input[aria-label*='LinkedIn'], input[placeholder*='LinkedIn']
+      Submit     : input[type="submit"] or button[type="submit"]
+    """
+
+    def _make_page(self, has_resume_field=True, has_cover_textarea=True, has_linkedin=False):
+        page = MagicMock()
+        _cache = {}
+        def locator_side_effect(selector):
+            if selector in _cache:
+                return _cache[selector]
+            loc = MagicMock()
+            if selector == 'input[type="file"]':
+                loc.count.return_value = 1 if has_resume_field else 0
+            elif selector == "textarea":
+                loc.count.return_value = 1 if has_cover_textarea else 0
+                loc.first = MagicMock()
+            elif "LinkedIn" in selector:
+                loc.count.return_value = 1 if has_linkedin else 0
+            else:
+                loc.count.return_value = 1
+            _cache[selector] = loc
+            return loc
+        page.locator.side_effect = locator_side_effect
+        page.wait_for_selector.return_value = MagicMock()
+        return page
+
+    def _make_job(self, cv_path=None):
+        return {
+            "id": 1,
+            "title": "Innovation Director",
+            "company": "Acme",
+            "url": "https://boards.greenhouse.io/acme/jobs/1",
+            "cover_letter": "I am very excited to apply for this role.",
+            "cv_path": cv_path,
+        }
+
+    def test_fills_required_fields(self):
+        applier = BrowserApplier()
+        page = self._make_page()
+        job = self._make_job()
+        with patch("builtins.input", return_value="y"):
+            applier._apply_greenhouse(page, job)
+        page.locator("input#first_name").fill.assert_called_once_with("Jane")
+        page.locator("input#last_name").fill.assert_called_once_with("Ball")
+        page.locator("input#email").fill.assert_called_once_with("jane.doe@example.com")
+        page.locator("input#phone").fill.assert_called_once_with("07700 900123")
+
+    def test_uploads_cv_when_path_exists(self, tmp_path):
+        applier = BrowserApplier()
+        cv_file = tmp_path / "outputs" / "cv.docx"
+        cv_file.parent.mkdir(parents=True)
+        cv_file.write_bytes(b"fake docx content")
+        rel_path = str(Path("outputs") / "cv.docx")
+        with patch("browser_apply.BASE_DIR", tmp_path):
+            page = self._make_page(has_resume_field=True)
+            job = self._make_job(cv_path=rel_path)
+            with patch("builtins.input", return_value="y"):
+                applier._apply_greenhouse(page, job)
+        page.locator('input[type="file"]').set_input_files.assert_called_once()
+
+    def test_skips_upload_when_no_cv_path(self):
+        applier = BrowserApplier()
+        page = self._make_page(has_resume_field=True)
+        job = self._make_job(cv_path=None)
+        with patch("builtins.input", return_value="y"):
+            applier._apply_greenhouse(page, job)
+        page.locator('input[type="file"]').set_input_files.assert_not_called()
+
+    def test_fills_cover_letter_textarea(self):
+        applier = BrowserApplier()
+        page = self._make_page(has_cover_textarea=True)
+        job = self._make_job()
+        with patch("builtins.input", return_value="y"):
+            applier._apply_greenhouse(page, job)
+        page.locator("textarea").first.fill.assert_called_once_with(job["cover_letter"])
+
+    def test_user_confirmation_yes_clicks_submit(self):
+        """When user types 'y', submit is clicked."""
+        applier = BrowserApplier()
+        page = self._make_page()
+        job = self._make_job()
+        with patch("builtins.input", return_value="y"):
+            success, msg = applier._apply_greenhouse(page, job)
+        assert success is True
+        # submit was clicked (either selector)
+        submit_clicked = (
+            page.locator("input[type='submit']").click.called
+            or page.locator('input[type="submit"]').click.called
+            or page.locator("button[type='submit']").click.called
+            or page.locator('button[type="submit"]').click.called
+        )
+        assert submit_clicked
+
+    def test_user_confirmation_no_returns_cancelled(self):
+        """When user types anything other than y/yes, returns (False, 'cancelled by user')."""
+        applier = BrowserApplier()
+        page = self._make_page()
+        job = self._make_job()
+        with patch("builtins.input", return_value="n"):
+            success, msg = applier._apply_greenhouse(page, job)
+        assert success is False
+        assert "cancel" in msg.lower()
+
+    def test_user_confirmation_yes_case_insensitive(self):
+        """'YES', 'Yes', 'Y' should all be accepted."""
+        applier = BrowserApplier()
+        page = self._make_page()
+        job = self._make_job()
+        with patch("builtins.input", return_value="YES"):
+            success, msg = applier._apply_greenhouse(page, job)
+        assert success is True

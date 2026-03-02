@@ -139,7 +139,55 @@ class BrowserApplier:
     # ------------------------------------------------------------------
 
     def _apply_greenhouse(self, page: Page, job: dict) -> tuple[bool, str]:
-        raise NotImplementedError
+        """Fill a standard Greenhouse application form."""
+        try:
+            page.wait_for_selector("input#first_name", timeout=15_000)
+        except Exception:
+            return False, "Greenhouse form fields not found — page may require login or have changed"
+
+        # Required text fields
+        page.locator("input#first_name").fill(self.profile["first_name"])
+        page.locator("input#last_name").fill(self.profile["last_name"])
+        page.locator("input#email").fill(self.profile["email"])
+        page.locator("input#phone").fill(self.profile["phone"])
+
+        # Resume upload (only if cv_path is set and file exists)
+        cv_path = job.get("cv_path")
+        if cv_path and page.locator('input[type="file"]').count():
+            full_path = BASE_DIR / cv_path
+            if full_path.exists():
+                page.locator('input[type="file"]').set_input_files(str(full_path))
+
+        # Cover letter textarea (first one on page)
+        cover = job.get("cover_letter") or ""
+        if cover and page.locator("textarea").count():
+            page.locator("textarea").first.fill(cover)
+
+        # LinkedIn field
+        linkedin_loc = page.locator("input[aria-label*='LinkedIn'], input[placeholder*='LinkedIn']")
+        if linkedin_loc.count():
+            linkedin_loc.first.fill(self.profile["linkedin"])
+
+        # --- Confirmation before submit ---
+        print(f"\n[BrowserApply] About to submit Greenhouse application:")
+        print(f"  Job   : {job.get('title')} at {job.get('company')}")
+        print(f"  URL   : {job.get('url')}")
+        print(f"  Name  : {self.profile['first_name']} {self.profile['last_name']}")
+        print(f"  Email : {self.profile['email']}")
+        print(f"  CV    : {cv_path or '(none)'}")
+        answer = input("\nSubmit this application? [y/N]: ").strip().lower()
+        if answer not in ("y", "yes"):
+            return False, "cancelled by user"
+
+        # Submit
+        submit = page.locator('input[type="submit"]')
+        if submit.count():
+            submit.click()
+        else:
+            page.locator('button[type="submit"]').click()
+
+        page.wait_for_load_state("networkidle", timeout=15_000)
+        return True, "Applied via Greenhouse form"
 
     def _apply_lever(self, page: Page, job: dict) -> tuple[bool, str]:
         raise NotImplementedError
