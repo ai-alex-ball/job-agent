@@ -29,6 +29,10 @@ DEFAULT_APPLICATION_EMAIL = os.environ.get("DEFAULT_APPLICATION_EMAIL", "")
 FLASK_PORT = int(os.environ.get("FLASK_PORT", "5000"))
 APPROVAL_BASE_URL = os.environ.get("APPROVAL_BASE_URL", f"http://localhost:{FLASK_PORT}")
 
+# Phase 4 — browser automation
+PLAYWRIGHT_HEADLESS = os.environ.get("PLAYWRIGHT_HEADLESS", "true").lower() != "false"
+SCREENSHOTS_DIR = BASE_DIR / "outputs" / "screenshots"
+
 
 # Job search
 TARGET_ROLES = [
