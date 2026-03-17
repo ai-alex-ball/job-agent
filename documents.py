@@ -6,6 +6,7 @@ scores 75+ and has proceed=true.
 
 import json
 import re
+import subprocess
 from datetime import date
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 from config import PROFILE_PATH, BASE_DIR
+from get_brand_color import get_brand_color
 
 OUTPUTS_DIR = BASE_DIR / "outputs"
 
@@ -85,6 +87,28 @@ def _make_slug(job: dict) -> str:
     return re.sub(r"_+", "_", slug).strip("_")
 
 
+def _parse_tailored_cv(tailored_cv_text: str | None) -> dict | None:
+    """Parse structured JSON from tailored_cv field.
+
+    Returns a dict with 'roles' and optional 'projects' keys, or None if the
+    field is absent, empty, or plain-text (old format — graceful fallback).
+    """
+    if not tailored_cv_text:
+        return None
+    try:
+        text = tailored_cv_text.strip()
+        # Strip markdown code fences Claude sometimes wraps JSON in
+        if text.startswith("```"):
+            lines = text.split("\n")
+            text = "\n".join(lines[1:-1])
+        data = json.loads(text)
+        if isinstance(data, dict) and "roles" in data:
+            return data
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Shared style helpers
 # ---------------------------------------------------------------------------
@@ -134,83 +158,57 @@ def _remove_table_borders(tbl):
 
 
 # ---------------------------------------------------------------------------
-# CV builder
+# CV content extraction (produces a dict for the JS renderer)
 # ---------------------------------------------------------------------------
 
-def _build_cv(profile: dict, job: dict, matched_skills: list[str], path: Path):
-    doc = Document()
-
-    # 0.62" margins all sides — matches master_cv.docx
-    for sec in doc.sections:
-        sec.top_margin = Inches(0.62)
-        sec.bottom_margin = Inches(0.62)
-        sec.left_margin = Inches(0.62)
-        sec.right_margin = Inches(0.62)
-
-    # Baseline: Arial 10pt
-    normal = doc.styles["Normal"]
-    normal.font.name = "Arial"
-    normal.font.size = Pt(10)
-    normal.paragraph_format.space_before = Pt(0)
-    normal.paragraph_format.space_after = Pt(2)
-
+def _extract_cv_content(profile: dict, job: dict, matched_skills: list[str]) -> dict:
+    """Serialise all CV content into a plain dict consumed by generate_cv.js."""
     personal = profile["personal"]
-    metrics = profile.get("key_metrics", {})
+    metrics  = profile.get("key_metrics", {})
 
-    # ── Name ─────────────────────────────────────────────────────────────────
-    p = doc.add_paragraph()
-    _spacing(p, before=0, after=2)
-    _font(p.add_run(personal["name"].upper()), 28, bold=True)
+    # Tagline — first two target roles + domain shorthand
+    target_roles = profile.get("job_preferences", {}).get("target_roles", [])
+    tagline_parts = list(dict.fromkeys(target_roles[:2])) + ["AI & Ventures"]
+    tagline = "  ·  ".join(tagline_parts)
 
-    # ── Contact line ──────────────────────────────────────────────────────────
-    parts = [
+    contact = [
         personal.get("location", ""),
         personal.get("email", ""),
         personal.get("phone", ""),
         personal.get("linkedin", "").replace("https://www.", "").replace("https://", ""),
-        personal.get("website", "").replace("https://www.", "").replace("https://", ""),
     ]
-    contact_p = doc.add_paragraph()
-    _spacing(contact_p, before=4, after=8)
-    _font(contact_p.add_run("  |  ".join(pt for pt in parts if pt)), 9, color=(90, 90, 90))
+    contact = [c for c in contact if c]
 
-    # ── Professional Summary ──────────────────────────────────────────────────
-    _section_heading(doc, "Professional Summary")
-    sp = doc.add_paragraph()
-    _spacing(sp, before=3, after=6)
-    _font(sp.add_run(profile["summary"]), 10)
-
-    # ── Career at a Glance ────────────────────────────────────────────────────
-    _section_heading(doc, "Career at a Glance")
     stats = [
-        (f"{metrics.get('years_experience', 23)} Years", "Experience"),
-        (f"{metrics.get('startups_mentored', 200)}+", "Startups Mentored"),
-        (str(metrics.get("startups_incubated", 88)), "Startups Incubated"),
-        (str(metrics.get("portfolio_raised", "£12m+")), "Portfolio Raised"),
-        (str(metrics.get("cost_savings_delivered", "€3.2m")), "Cost Savings Delivered"),
+        {"value": f"{metrics.get('years_experience', 23)} Years", "label": "Experience"},
+        {"value": f"{metrics.get('startups_mentored', 200)}+",    "label": "Startups Mentored"},
+        {"value": str(metrics.get("startups_incubated", 88)),     "label": "Startups Incubated"},
+        {"value": str(metrics.get("portfolio_raised", "£12m+")), "label": "Portfolio Raised"},
+        {"value": str(metrics.get("portfolio_market_cap_managed", "$8B+")), "label": "Portfolio Managed"},
     ]
 
-    tbl = doc.add_table(rows=2, cols=len(stats))
-    _remove_table_borders(tbl)
-    for i, (value, label) in enumerate(stats):
-        val_cell = tbl.rows[0].cells[i]
-        val_cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        _spacing(val_cell.paragraphs[0], before=4, after=1)
-        _font(val_cell.paragraphs[0].add_run(value), 14, bold=True)
+    # Parse structured tailored_cv
+    structured = _parse_tailored_cv(job.get("tailored_cv"))
+    structured_bullets: dict[str, list[str]] = {}
+    structured_projects: list[dict] = []
+    tailored_summary: str | None = None
+    if structured:
+        tailored_summary = structured.get("summary") or None
+        for role_data in structured.get("roles", []):
+            key = role_data.get("company", "").lower()
+            if key:
+                structured_bullets[key] = role_data.get("bullets", [])
+        structured_projects = structured.get("projects", [])
 
-        lbl_cell = tbl.rows[1].cells[i]
-        lbl_cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        _spacing(lbl_cell.paragraphs[0], before=0, after=6)
-        _font(lbl_cell.paragraphs[0].add_run(label), 8, color=(90, 90, 90))
+    # Projects — max 2, max 3 bullets each
+    projects = [
+        {"name": p.get("name", ""), "date": p.get("date", ""), "bullets": p.get("bullets", [])[:3]}
+        for p in structured_projects[:2]
+    ]
 
-    # ── Experience ────────────────────────────────────────────────────────────
-    _section_heading(doc, "Experience")
-
+    # Split roles: main vs earlier career
     matched_lower = [s.lower() for s in matched_skills]
-
-    # Split: recent full roles get bullets; old part-time roles go to Earlier Career
-    main_roles = []
-    earlier_roles = []
+    main_roles, earlier_roles = [], []
     for role in profile["career_history"]:
         start_year = int(str(role["start"])[:4])
         is_old_parttime = role.get("type") == "part-time" and start_year < 2020
@@ -219,69 +217,108 @@ def _build_cv(profile: dict, job: dict, matched_skills: list[str], path: Path):
         else:
             main_roles.append(role)
 
+    experience = []
     for role in main_roles:
         start_year = int(str(role["start"])[:4])
-        max_bullets = 4 if start_year >= 2015 else 3
+        max_bullets = 4 if start_year >= 2015 else 2
 
-        # Title · Company
-        rp = doc.add_paragraph()
-        _spacing(rp, before=10, after=3)
-        _font(rp.add_run(role["title"]), 11, bold=True)
-        _font(rp.add_run("  ·  "), 10, color=(140, 140, 140))
-        _font(rp.add_run(role["company"]), 11, bold=True)
+        company_key = role["company"].lower()
+        if company_key in structured_bullets:
+            bullets = structured_bullets[company_key]
+        else:
+            bullets = list(role.get("achievements", []))
+            bullets.sort(key=lambda b: -sum(1 for s in matched_lower if s in b.lower()))
 
-        # Location  |  Dates
-        mp = doc.add_paragraph()
-        _spacing(mp, before=0, after=2)
-        dates = f"{role['start']} – {str(role['end']).capitalize()}"
-        loc = role.get("location", "")
-        _font(mp.add_run(f"{loc}  |  {dates}" if loc else dates), 9,
-              italic=True, color=(110, 110, 110))
+        experience.append({
+            "title":    role["title"],
+            "company":  role["company"],
+            "dates":    f"{role['start']} – {str(role['end']).capitalize()}",
+            "location": role.get("location", ""),
+            "bullets":  bullets[:max_bullets],
+        })
 
-        # Bullets sorted by matched-skill relevance
-        bullets = list(role.get("achievements", []))
-        bullets.sort(key=lambda b: -sum(1 for s in matched_lower if s in b.lower()))
+    earlier_career = [
+        {
+            "company": r["company"],
+            "title":   r["title"],
+            "dates":   f"{r['start']} – {str(r['end']).capitalize()}",
+        }
+        for r in earlier_roles
+    ]
 
-        for bullet in bullets[:max_bullets]:
-            bp = doc.add_paragraph()
-            bp.paragraph_format.space_before = Pt(2)
-            bp.paragraph_format.space_after = Pt(2)
-            bp.paragraph_format.left_indent = Inches(0.25)
-            bp.paragraph_format.first_line_indent = Inches(-0.15)
-            _font(bp.add_run("▸  " + bullet), 10)
+    # Education — group AI certifications into one line, then key edu items
+    education: list[str] = []
+    certs = profile.get("ai_certifications", [])
+    if certs:
+        issuer = certs[0]["issuer"]
+        year   = certs[0]["year"]
+        titles = ", ".join(c["title"] for c in certs)
+        education.append(f"{issuer} Certifications ({year}): {titles}")
+    for edu in profile.get("education", [])[:3]:
+        education.append(edu)
 
-    # ── Earlier Career ────────────────────────────────────────────────────────
-    if earlier_roles:
-        ec = doc.add_paragraph()
-        _spacing(ec, before=10, after=3)
-        _font(ec.add_run("Earlier Career"), 10, bold=True)
-        for role in earlier_roles:
-            dates = f"{role['start']} – {str(role['end']).capitalize()}"
-            ep = doc.add_paragraph()
-            _spacing(ep, before=0, after=2)
-            _font(ep.add_run(role["company"] + " — "), 10, bold=True)
-            _font(ep.add_run(role["title"]), 10)
-            _font(ep.add_run(f"  ({dates})"), 9, color=(110, 110, 110))
+    # Skills table rows — use tailored override when present, else derive from profile
+    if structured and structured.get("skills"):
+        skills = structured["skills"]
+    else:
+        skills_data = profile.get("skills", {})
+        SKILL_ROWS = [
+            ("AI & Technology",      ["ai_specific", "technology"]),
+            ("Programme Leadership", ["programme_leadership"]),
+            ("Venture & Investment", ["venture_and_investment"]),
+            ("Leadership",           ["leadership"]),
+        ]
+        skills = []
+        for label, keys in SKILL_ROWS:
+            merged: list[str] = []
+            for k in keys:
+                merged.extend(skills_data.get(k, []))
+            skills.append({"label": label, "values": "  ·  ".join(merged[:5])})
 
-    # ── Education & Qualifications ────────────────────────────────────────────
-    _section_heading(doc, "Education & Qualifications")
-    for edu in profile.get("education", []):
-        ep = doc.add_paragraph()
-        ep.paragraph_format.space_before = Pt(2)
-        ep.paragraph_format.space_after = Pt(2)
-        ep.paragraph_format.left_indent = Inches(0.25)
-        ep.paragraph_format.first_line_indent = Inches(-0.15)
-        _font(ep.add_run("▸  " + edu), 10)
+    return {
+        "name":          personal["name"],
+        "tagline":       tagline,
+        "contact":       contact,
+        "stats":         stats,
+        "summary":       tailored_summary or profile["summary"],
+        "projects":      projects,
+        "experience":    experience,
+        "earlier_career": earlier_career,
+        "education":     education,
+        "skills":        skills,
+    }
 
-    # ── Key Skills ────────────────────────────────────────────────────────────
-    _section_heading(doc, "Key Skills")
-    for category, skill_list in profile.get("skills", {}).items():
-        kp = doc.add_paragraph()
-        _spacing(kp, before=1, after=1)
-        _font(kp.add_run(category.replace("_", " ").title() + ": "), 10, bold=True)
-        _font(kp.add_run(", ".join(skill_list)), 10)
 
-    doc.save(path)
+# ---------------------------------------------------------------------------
+# CV builder — delegates rendering to generate_cv.js
+# ---------------------------------------------------------------------------
+
+def _render_cv_with_js(content: dict, accent: str, path: Path) -> None:
+    """Pipe content JSON to generate_cv.js and write the styled .docx."""
+    js_script    = BASE_DIR / "generate_cv.js"
+    node_modules = BASE_DIR / "node_modules" / "docx"
+
+    if not node_modules.exists():
+        print("[Documents] Installing npm packages...")
+        subprocess.run(["npm", "install"], cwd=BASE_DIR, check=True, capture_output=True)
+
+    payload = json.dumps({"content": content, "accent": accent, "output": str(path)})
+    result  = subprocess.run(
+        ["node", str(js_script)],
+        input=payload.encode(),
+        capture_output=True,
+        cwd=BASE_DIR,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"[Documents] generate_cv.js failed:\n{result.stderr.decode()}")
+    if result.stdout:
+        print(result.stdout.decode().strip())
+
+
+def _build_cv(profile: dict, job: dict, matched_skills: list[str], path: Path):
+    accent  = get_brand_color(job.get("company", ""))
+    content = _extract_cv_content(profile, job, matched_skills)
+    _render_cv_with_js(content, accent, path)
     print(f"[Documents] CV saved: {path.name}")
 
 
