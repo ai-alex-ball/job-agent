@@ -10,6 +10,7 @@ from config import (
     REED_API_KEY,
     JSEARCH_API_KEY,
     TARGET_ROLES,
+    JSEARCH_ROLES,
     LOCATION,
     REED_DISTANCE_MILES,
     RESULTS_PER_QUERY,
@@ -39,7 +40,7 @@ def fetch_reed_jobs() -> list[dict]:
                 auth=(REED_API_KEY, ""),
                 params={
                     "keywords": role,
-                    "location": LOCATION,
+                    "locationName": LOCATION,
                     "distancefromlocation": REED_DISTANCE_MILES,
                     "resultsToTake": RESULTS_PER_QUERY,
                     "minimumSalary": 60000,  # broad filter to reduce noise
@@ -87,7 +88,7 @@ def fetch_jsearch_jobs() -> list[dict]:
         "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
     }
 
-    for role in TARGET_ROLES:
+    for role in JSEARCH_ROLES:
         try:
             resp = requests.get(
                 url,

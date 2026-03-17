@@ -47,6 +47,31 @@ TARGET_ROLES = [
     "VP Innovation",
     "Accelerator Lead",
     "Head of Ventures",
+    "Chief of Staff",
+    "Ecosystem Lead",
+    "Head of Ecosystem",
+    "Portfolio Director",
+    "Venture Studio Lead",
+    "Developer Relations",
+    "Head of Developer Relations",
+    "Community Director",
+    "AI Strategy Lead",
+    "Head of AI",
+    "Transformation Director",
+    "Managing Director",
+    "Head of Partnerships",
+    "Entrepreneur in Residence",
+    "Venture Partner",
+]
+
+# Reduced role list for JSearch (RapidAPI free tier = 200 req/month; 6 terms × 30 days = 180)
+JSEARCH_ROLES = [
+    "Programme Director",
+    "Innovation Lead",
+    "Head of Innovation",
+    "Startup Partnerships",
+    "Venture Lead",
+    "AI Programme Director",
 ]
 
 LOCATION = "London"
@@ -88,6 +113,11 @@ TITLE_INCLUDE_KEYWORDS = [
     "strategic partnerships",
     "head of ventures",
     "developer relations",
+    "transformation",
+    "entrepreneur",
+    "venture partner",
+    "chief of staff",
+    "portfolio director",
 ]
 
 # Title must NOT contain any of these (case-insensitive) — hard reject before Claude.
