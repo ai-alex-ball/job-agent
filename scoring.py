@@ -106,7 +106,56 @@ def _stage1_score(job: dict) -> dict | None:
 
 
 def _stage2_score(job: dict) -> dict | None:
-    """Stage 2: Sonnet full pipeline (scoring + CV + cover letter). Returns parsed result or None."""
+    """Stage 2: Sonnet re-score for accuracy. Returns parsed scoring result or None."""
+    try:
+        response = _client().messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=1024,
+            system=[{
+                "type": "text",
+                "text": _STAGE1_SYSTEM,  # same scoring-only prompt as Stage 1, Sonnet for accuracy
+                "cache_control": {"type": "ephemeral"},
+            }],
+            messages=[{"role": "user", "content": _build_job_section(job)}],
+            extra_headers=_CACHE_HEADER,
+        )
+        _log_cache(response.usage)
+        result = _parse_json(response.content[0].text)
+
+        # Hard gate: role_type_match=false forces reject regardless of score
+        scoring = result.get("scoring", {})
+        if not scoring.get("role_type_match", True):
+            scoring["proceed"] = False
+            scoring["rationale"] = "Role type mismatch — not in target categories"
+            result["scoring"] = scoring
+
+        # Override proceed based on configurable threshold
+        overall = scoring.get("overall_score", 0)
+        if (scoring.get("proceed") is False
+                and scoring.get("role_type_match", True)
+                and overall >= MIN_SCORE_THRESHOLD):
+            scoring["proceed"] = True
+            result["scoring"] = scoring
+
+        result["dream_employer"] = _is_dream_employer(job.get("company", ""))
+        result["tailored_cv"] = None
+        result["cover_letter"] = None
+        return result
+
+    except json.JSONDecodeError as e:
+        print(f"[Scoring/S2] JSON parse error for '{job.get('title')}' @ {job.get('company')}: {e}")
+        return None
+    except Exception as e:
+        print(f"[Scoring/S2] Error for '{job.get('title')}' @ {job.get('company')}: {e}")
+        return None
+
+
+def generate_cv_and_cover_letter(job: dict) -> tuple[str | None, str | None]:
+    """
+    Call Sonnet with the master prompt to generate tailored CV and cover letter.
+    Called at approval time — not during the automated scoring pipeline.
+    Returns (tailored_cv_json_str, cover_letter_text) or (None, None) on error.
+    """
     try:
         response = _client().messages.create(
             model=CLAUDE_MODEL,
@@ -131,31 +180,14 @@ def _stage2_score(job: dict) -> dict | None:
         )
         _log_cache(response.usage)
         result = _parse_json(response.content[0].text)
-
-        # Hard gate: role_type_match=false forces reject regardless of score
-        scoring = result.get("scoring", {})
-        if not scoring.get("role_type_match", True):
-            scoring["proceed"] = False
-            scoring["rationale"] = "Role type mismatch — not in target categories"
-            result["scoring"] = scoring
-
-        # Override proceed based on configurable threshold
-        overall = scoring.get("overall_score", 0)
-        if (scoring.get("proceed") is False
-                and scoring.get("role_type_match", True)
-                and overall >= MIN_SCORE_THRESHOLD):
-            scoring["proceed"] = True
-            result["scoring"] = scoring
-
-        result["dream_employer"] = _is_dream_employer(job.get("company", ""))
-        return result
-
-    except json.JSONDecodeError as e:
-        print(f"[Scoring/S2] JSON parse error for '{job.get('title')}' @ {job.get('company')}: {e}")
-        return None
+        tailored_cv = result.get("tailored_cv")
+        cover_letter = result.get("cover_letter")
+        if isinstance(tailored_cv, (dict, list)):
+            tailored_cv = json.dumps(tailored_cv)
+        return tailored_cv, cover_letter
     except Exception as e:
-        print(f"[Scoring/S2] Error for '{job.get('title')}' @ {job.get('company')}: {e}")
-        return None
+        print(f"[Scoring/Docs] Error generating documents for '{job.get('title')}' @ {job.get('company')}: {e}")
+        return None, None
 
 
 def score_job(job: dict) -> dict | None:

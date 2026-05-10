@@ -60,6 +60,7 @@ def init_db():
         ("dream_employer",         "INTEGER DEFAULT 0"),
         ("browser_apply_status",   "TEXT"),
         ("browser_apply_error",    "TEXT"),
+        ("dimensions",             "TEXT"),
     ]
     for col, definition in new_cols:
         if col not in existing:
@@ -141,6 +142,7 @@ def update_score(row_id: int, result: dict):
             skill_gaps     = ?,
             red_flags      = ?,
             rationale      = ?,
+            dimensions     = ?,
             tailored_cv    = ?,
             cover_letter   = ?,
             scored_at      = ?,
@@ -154,12 +156,24 @@ def update_score(row_id: int, result: dict):
             json.dumps(scoring.get("skill_gaps", [])),
             json.dumps(scoring.get("red_flags", [])),
             scoring.get("rationale"),
-            result.get("tailored_cv"),
-            result.get("cover_letter"),
+            json.dumps(scoring.get("dimensions")) if scoring.get("dimensions") is not None else None,
+            json.dumps(result.get("tailored_cv")) if isinstance(result.get("tailored_cv"), (dict, list)) else result.get("tailored_cv"),
+            json.dumps(result.get("cover_letter")) if isinstance(result.get("cover_letter"), (dict, list)) else result.get("cover_letter"),
             datetime.now(timezone.utc).isoformat(),
             dream,
             row_id,
         ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def save_generated_content(row_id: int, tailored_cv: str | None, cover_letter: str | None):
+    """Persist tailored CV and cover letter text generated at approval time."""
+    conn = get_conn()
+    conn.execute(
+        "UPDATE jobs SET tailored_cv = ?, cover_letter = ? WHERE id = ?",
+        (tailored_cv, cover_letter, row_id),
     )
     conn.commit()
     conn.close()
@@ -193,7 +207,7 @@ def get_scored_jobs_for_digest() -> list[dict]:
     rows = conn.execute(
         """
         SELECT * FROM jobs
-        WHERE date(created_at) = date('now')
+        WHERE date(scored_at) = date('now')
           AND (
             status IN ('scored', 'documents_generated')
             OR (dream_employer = 1 AND score >= ?)

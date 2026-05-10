@@ -8,7 +8,6 @@ from database import (
     insert_job,
     get_new_jobs,
     update_score,
-    mark_documents_generated,
     get_scored_jobs_for_digest,
     mark_digest_sent,
     get_conn,
@@ -19,7 +18,6 @@ from database import (
 from browser_apply import BrowserApplier
 from ingestion import fetch_all_jobs
 from scoring import score_job
-from documents import generate_documents
 from digest import send_digest, send_dream_alert
 from dashboard import generate_dashboard
 from alerts import send_alert, send_heartbeat
@@ -104,8 +102,12 @@ def run():
             if result is None:
                 print(f"    → Failed — skipping")
                 continue
+            try:
+                update_score(job["id"], result)
+            except Exception as e:
+                print(f"    → DB write failed for '{label}': {e} — continuing")
+                continue
             scored_count += 1
-            update_score(job["id"], result)
             scoring = result.get("scoring", {})
             score = scoring.get("overall_score", 0)
             proceed = scoring.get("proceed", False)
@@ -114,14 +116,12 @@ def run():
             print(f"    → {score}/100  [{status}]{dream_tag}  {scoring.get('rationale', '')}")
 
             if result.get("dream_employer"):
-                send_dream_alert(job, score, scoring.get("rationale", ""))
+                try:
+                    send_dream_alert(job, score, scoring.get("rationale", ""))
+                except Exception as e:
+                    print(f"    → Dream alert failed for '{label}': {e}")
             if proceed:
                 passed += 1
-                try:
-                    cv_path, cl_path = generate_documents({**job, **result})
-                    mark_documents_generated(job["id"], cv_path, cl_path)
-                except Exception as e:
-                    print(f"    → Document generation failed: {e}")
     except Exception as e:
         send_alert(f"Scoring failed after {scored_count} jobs", e, tb_module.format_exc())
 
@@ -141,11 +141,17 @@ def run():
 
     # 5. Sync documents to Windows
     print("\n[Pipeline] Syncing documents to Windows...")
-    sync_to_windows()
+    try:
+        sync_to_windows()
+    except Exception as e:
+        print(f"[Pipeline] Windows sync failed (non-fatal): {e}")
 
     # 6. Regenerate dashboard
     print("\n[Pipeline] Regenerating dashboard...")
-    generate_dashboard()
+    try:
+        generate_dashboard()
+    except Exception as e:
+        print(f"[Pipeline] Dashboard generation failed (non-fatal): {e}")
 
     # 7. Heartbeat — confirms pipeline completed
     send_heartbeat(scored_count, passed)
@@ -215,11 +221,29 @@ def auto_apply():
     print(f"\n[AutoApply] {success_count}/{len(jobs)} applied successfully.")
 
 
+def ingest_only():
+    init_db()
+    try:
+        raw_jobs = fetch_all_jobs()
+    except Exception as e:
+        send_alert("Ingestion failed", e, tb_module.format_exc())
+        raw_jobs = []
+
+    new_count = 0
+    for job in raw_jobs:
+        if insert_job(job) is not None:
+            new_count += 1
+
+    print(f"\n[Ingest] {new_count} new jobs added ({len(raw_jobs)} fetched total)")
+
+
 if __name__ == "__main__":
     if "--status" in sys.argv:
         print_status()
     elif "--auto-apply" in sys.argv:
         auto_apply()
+    elif "--ingest-only" in sys.argv:
+        ingest_only()
     else:
         try:
             run()

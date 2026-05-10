@@ -13,6 +13,8 @@ NOTE: The digest email buttons link to http://localhost:5000/... so this
 server must be running on the same machine where you read your email.
 """
 
+import json
+
 from flask import Flask, abort
 
 from database import (
@@ -21,11 +23,15 @@ from database import (
     mark_applied,
     mark_skipped,
     mark_manual_required,
+    mark_documents_generated,
     mark_browser_applied,
     mark_browser_apply_failed,
+    save_generated_content,
 )
 from browser_apply import BrowserApplier, detect_portal
 from apply import send_application
+from documents import generate_documents
+from scoring import generate_cv_and_cover_letter
 from config import FLASK_PORT
 
 app = Flask(__name__)
@@ -128,6 +134,23 @@ def approve(token: str):
         return _no_email_page(job["title"], job["company"], job_url, token, portal)
 
     mark_approved(job["id"])
+
+    # Generate tailored CV and cover letter on-demand (not done during scoring pipeline)
+    if not job.get("tailored_cv") or not job.get("cover_letter"):
+        print(f"[Approvals] Generating documents for '{job['title']}' @ {job['company']}...")
+        tailored_cv, cover_letter = generate_cv_and_cover_letter(job)
+        if tailored_cv or cover_letter:
+            save_generated_content(job["id"], tailored_cv, cover_letter)
+            job = {**job, "tailored_cv": tailored_cv, "cover_letter": cover_letter}
+
+    # Render .docx files
+    try:
+        cv_path, cl_path = generate_documents(job)
+        mark_documents_generated(job["id"], cv_path, cl_path)
+        job = {**job, "cv_path": cv_path, "cover_letter_path": cl_path}
+    except Exception as e:
+        print(f"[Approvals] Document render failed: {e}")
+
     success, result = send_application(job)
 
     if success:
