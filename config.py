@@ -14,10 +14,17 @@ DB_PATH = BASE_DIR / "jobs.db"
 REED_API_KEY = os.environ.get("REED_API_KEY", "")
 JSEARCH_API_KEY = os.environ.get("JSEARCH_API_KEY", "")  # RapidAPI key
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+ADZUNA_APP_ID = os.getenv("ADZUNA_APP_ID", "")
+ADZUNA_APP_KEY = os.getenv("ADZUNA_APP_KEY", "")
+ADZUNA_COUNTRY = "gb"
 
 # Claude
 CLAUDE_MODEL = "claude-sonnet-4-6"
-MIN_SCORE_THRESHOLD = 75
+CLAUDE_HAIKU_MODEL = "claude-haiku-4-5"
+MIN_SCORE_THRESHOLD = 70
+# Stage 1 (Haiku) pre-filter threshold — set below MIN_SCORE_THRESHOLD to buffer
+# for Haiku's lower accuracy; jobs above this go to Stage 2 (Sonnet) for full scoring
+HAIKU_PREFILTER_THRESHOLD = 55
 
 # Gmail
 GMAIL_USER = os.environ.get("GMAIL_USER", "")
@@ -76,7 +83,8 @@ JSEARCH_ROLES = [
 
 LOCATION = "London"
 REED_DISTANCE_MILES = 15
-RESULTS_PER_QUERY = 10
+RESULTS_PER_QUERY = 25
+ADZUNA_MIN_SALARY = int(os.environ.get("ADZUNA_MIN_SALARY", "60000"))
 MAX_JOBS_PER_RUN = 30
 DREAM_EMPLOYER_MIN_SCORE = 60
 DREAM_ALERT_RECIPIENT = "jobseeker@example.com"
@@ -118,6 +126,11 @@ TITLE_INCLUDE_KEYWORDS = [
     "venture partner",
     "chief of staff",
     "portfolio director",
+    "head of ai",
+    "ai strategy",
+    "managing director",
+    "head of partnerships",
+    "community director",
 ]
 
 # Title must NOT contain any of these (case-insensitive) — hard reject before Claude.
@@ -142,4 +155,8 @@ TITLE_EXCLUDE_KEYWORDS = [
     "conveyancing",
     "social worker",
     "care worker",
+    "intern",
+    "internship",
+    "graduate",
+    "junior",
 ]
