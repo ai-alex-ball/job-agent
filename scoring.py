@@ -12,8 +12,12 @@ _SYSTEM_PROMPT: str = (PROMPTS_DIR / "00_master_pipeline_prompt.md").read_text()
 _SCORING_PROMPT: str = (PROMPTS_DIR / "00_scoring_only_prompt.md").read_text()
 _CLIENT: anthropic.Anthropic | None = None
 
-# Pre-rendered, stable sections used as cache prefixes
+# Pre-rendered stable sections used as cache prefixes.
+# Stage 1 (Haiku): scoring prompt + profile merged into one system block (~4,900 tokens).
+# Haiku requires ≥4,096 tokens to cache; neither section alone clears that bar,
+# but combined they do — so we use a single breakpoint instead of two.
 _PROFILE_SECTION = f"## CANDIDATE PROFILE\n\n{json.dumps(_PROFILE, indent=2)}\n\n---\n\n"
+_STAGE1_SYSTEM = f"{_SCORING_PROMPT}\n\n{_PROFILE_SECTION}"
 
 _CACHE_HEADER = {"anthropic-beta": "prompt-caching-2024-07-31"}
 
@@ -85,20 +89,10 @@ def _stage1_score(job: dict) -> dict | None:
             max_tokens=1024,
             system=[{
                 "type": "text",
-                "text": _SCORING_PROMPT,
+                "text": _STAGE1_SYSTEM,  # scoring prompt + profile, ~4,900 tokens — above Haiku cache threshold
                 "cache_control": {"type": "ephemeral"},
             }],
-            messages=[{"role": "user", "content": [
-                {
-                    "type": "text",
-                    "text": _PROFILE_SECTION,
-                    "cache_control": {"type": "ephemeral"},
-                },
-                {
-                    "type": "text",
-                    "text": _build_job_section(job),
-                },
-            ]}],
+            messages=[{"role": "user", "content": _build_job_section(job)}],
             extra_headers=_CACHE_HEADER,
         )
         _log_cache(response.usage)
