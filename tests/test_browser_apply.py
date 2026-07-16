@@ -1,3 +1,4 @@
+import json
 import pytest
 from unittest.mock import MagicMock, patch, call
 import sys
@@ -5,6 +6,26 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from browser_apply import detect_portal
+
+
+# Fake profile data used for every test in this file so the suite doesn't
+# depend on a real, personal profile.json being present (profile.json is
+# gitignored — see profile.example.json for the template).
+_FAKE_PROFILE = {
+    "personal": {
+        "name": "Jane Doe",
+        "email": "jane.doe@example.com",
+        "phone": "07700 900123",
+        "linkedin": "https://www.linkedin.com/in/janedoe/",
+    }
+}
+
+
+@pytest.fixture(autouse=True)
+def fake_profile(tmp_path, monkeypatch):
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(json.dumps(_FAKE_PROFILE))
+    monkeypatch.setattr("browser_apply.PROFILE_PATH", profile_path)
 
 
 class TestDetectPortal:
@@ -57,12 +78,12 @@ class TestBrowserApplierProfileLoad:
 
     def test_loads_linkedin(self):
         applier = BrowserApplier()
-        assert "linkedin.com/in/jane-doe-example" in applier.profile["linkedin"]
+        assert "linkedin.com/in/janedoe" in applier.profile["linkedin"]
 
     def test_name_splits_to_first_last(self):
         applier = BrowserApplier()
         assert applier.profile["first_name"] == "Jane"
-        assert applier.profile["last_name"] == "Ball"
+        assert applier.profile["last_name"] == "Doe"
 
 
 class TestBrowserApplierDispatch:
@@ -175,7 +196,7 @@ class TestGreenhouseFiller:
         with patch("builtins.input", return_value="y"):
             applier._apply_greenhouse(page, job)
         page.locator("input#first_name").fill.assert_called_once_with("Jane")
-        page.locator("input#last_name").fill.assert_called_once_with("Ball")
+        page.locator("input#last_name").fill.assert_called_once_with("Doe")
         page.locator("input#email").fill.assert_called_once_with("jane.doe@example.com")
         page.locator("input#phone").fill.assert_called_once_with("07700 900123")
 

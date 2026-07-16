@@ -29,7 +29,7 @@ HAIKU_PREFILTER_THRESHOLD = 55
 # Gmail
 GMAIL_USER = os.environ.get("GMAIL_USER", "")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
-DIGEST_RECIPIENT = os.environ.get("DIGEST_RECIPIENT", "jane.doe@example.com")
+DIGEST_RECIPIENT = os.environ.get("DIGEST_RECIPIENT", "")
 DEFAULT_APPLICATION_EMAIL = os.environ.get("DEFAULT_APPLICATION_EMAIL", "")
 
 # Phase 3 — approval webhook
@@ -87,7 +87,7 @@ RESULTS_PER_QUERY = 25
 ADZUNA_MIN_SALARY = int(os.environ.get("ADZUNA_MIN_SALARY", "60000"))
 MAX_JOBS_PER_RUN = 30
 DREAM_EMPLOYER_MIN_SCORE = 60
-DREAM_ALERT_RECIPIENT = "jobseeker@example.com"
+DREAM_ALERT_RECIPIENT = os.environ.get("DREAM_ALERT_RECIPIENT", "")
 
 DREAM_EMPLOYERS = [
     # AI labs

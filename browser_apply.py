@@ -22,6 +22,7 @@ _PORTAL_PATTERNS: list[tuple[str, list[str]]] = [
     ("greenhouse", ["greenhouse.io"]),
     ("lever",      ["lever.co"]),
     ("workday",    ["myworkday.com", "workdayjobs.com"]),
+    ("amazon",     ["jobs.amazon.com", "amazon.jobs", "aws.amazon", "amazon.com/jobs"]),
 ]
 
 
@@ -84,8 +85,8 @@ class BrowserApplier:
         url = job.get("url", "")
         portal = detect_portal(url)
 
-        if portal == "workday":
-            return False, "unsupported: Workday requires manual application"
+        if portal in ("workday", "amazon"):
+            return False, f"unsupported: {portal.capitalize()} requires manual application via listing"
 
         try:
             with sync_playwright() as pw:
@@ -100,7 +101,8 @@ class BrowserApplier:
                 )
                 try:
                     page = context.new_page()
-                    page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+                    nav_timeout = 45_000 if portal == "generic" else 30_000
+                    page.goto(url, wait_until="domcontentloaded", timeout=nav_timeout)
 
                     if portal == "greenhouse":
                         success, msg = self._apply_greenhouse(page, job)

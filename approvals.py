@@ -4,7 +4,7 @@ approvals.py — Phase 3 approval webhook server
 Run this alongside the cron job so APPROVE / SKIP clicks in the digest
 email are handled in real time:
 
-    cd /home/theboss/job-agent && python3 approvals.py
+    cd /path/to/job-agent && python3 approvals.py
 
 Listens on 127.0.0.1:{FLASK_PORT} (default: 5000).
 The APPROVE and SKIP links in the digest email point to this server.

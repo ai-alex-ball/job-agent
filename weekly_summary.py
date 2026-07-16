@@ -1,5 +1,5 @@
 """
-weekly_summary.py — Weekly job-agent digest for Jane Doe.
+weekly_summary.py — Weekly job-agent digest.
 
 Sends every Sunday at 08:00 via cron.  Can also be triggered manually:
     python3 weekly_summary.py
@@ -76,85 +76,86 @@ def _query_week() -> dict:
     """Single connection, all queries for the past 7 days."""
     conn = get_conn()
     since = (date.today() - timedelta(days=6)).isoformat()  # inclusive 7-day window
+    try:
+        stats = {}
 
-    stats = {}
+        stats["fetched"] = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE date(created_at) >= ?", (since,)
+        ).fetchone()[0]
 
-    stats["fetched"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE date(created_at) >= ?", (since,)
-    ).fetchone()[0]
-
-    stats["scored"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE scored_at IS NOT NULL AND date(scored_at) >= ?",
-        (since,),
-    ).fetchone()[0]
-
-    stats["passed"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE score >= 75 AND date(scored_at) >= ?",
-        (since,),
-    ).fetchone()[0]
-
-    stats["dream_matches"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE dream_employer = 1 AND date(created_at) >= ?",
-        (since,),
-    ).fetchone()[0]
-
-    stats["applied"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE status = 'applied' AND date(applied_at) >= ?",
-        (since,),
-    ).fetchone()[0]
-
-    stats["manual"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE status = 'manual_required'"
-    ).fetchone()[0]
-
-    applications = [
-        dict(r) for r in conn.execute(
-            """SELECT title, company, score, applied_at, application_email_used, url
-               FROM jobs
-               WHERE status = 'applied' AND date(applied_at) >= ?
-               ORDER BY applied_at DESC""",
+        stats["scored"] = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE scored_at IS NOT NULL AND date(scored_at) >= ?",
             (since,),
-        ).fetchall()
-    ]
+        ).fetchone()[0]
 
-    manual_pending = [
-        dict(r) for r in conn.execute(
-            """SELECT title, company, score, created_at, url
-               FROM jobs
-               WHERE status = 'manual_required'
-               ORDER BY score DESC NULLS LAST"""
-        ).fetchall()
-    ]
-
-    dream_activity = [
-        dict(r) for r in conn.execute(
-            """SELECT title, company, score, status, created_at, url
-               FROM jobs
-               WHERE dream_employer = 1 AND date(created_at) >= ?
-               ORDER BY score DESC NULLS LAST""",
+        stats["passed"] = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE score >= 75 AND date(scored_at) >= ?",
             (since,),
-        ).fetchall()
-    ]
+        ).fetchone()[0]
 
-    top_pending = [
-        dict(r) for r in conn.execute(
-            """SELECT title, company, score, status, url
-               FROM jobs
-               WHERE status NOT IN ('applied', 'skipped', 'rejected')
-                 AND score >= 75
-               ORDER BY score DESC
-               LIMIT 5"""
-        ).fetchall()
-    ]
+        stats["dream_matches"] = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE dream_employer = 1 AND date(created_at) >= ?",
+            (since,),
+        ).fetchone()[0]
 
-    conn.close()
-    return {
-        "stats":        stats,
-        "applications": applications,
-        "manual":       manual_pending,
-        "dream":        dream_activity,
-        "top_pending":  top_pending,
-    }
+        stats["applied"] = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE status = 'applied' AND date(applied_at) >= ?",
+            (since,),
+        ).fetchone()[0]
+
+        stats["manual"] = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE status = 'manual_required'"
+        ).fetchone()[0]
+
+        applications = [
+            dict(r) for r in conn.execute(
+                """SELECT title, company, score, applied_at, application_email_used, url
+                   FROM jobs
+                   WHERE status = 'applied' AND date(applied_at) >= ?
+                   ORDER BY applied_at DESC""",
+                (since,),
+            ).fetchall()
+        ]
+
+        manual_pending = [
+            dict(r) for r in conn.execute(
+                """SELECT title, company, score, created_at, url
+                   FROM jobs
+                   WHERE status = 'manual_required'
+                   ORDER BY score DESC NULLS LAST"""
+            ).fetchall()
+        ]
+
+        dream_activity = [
+            dict(r) for r in conn.execute(
+                """SELECT title, company, score, status, created_at, url
+                   FROM jobs
+                   WHERE dream_employer = 1 AND date(created_at) >= ?
+                   ORDER BY score DESC NULLS LAST""",
+                (since,),
+            ).fetchall()
+        ]
+
+        top_pending = [
+            dict(r) for r in conn.execute(
+                """SELECT title, company, score, status, url
+                   FROM jobs
+                   WHERE status NOT IN ('applied', 'skipped', 'rejected')
+                     AND score >= 75
+                   ORDER BY score DESC
+                   LIMIT 5"""
+            ).fetchall()
+        ]
+
+        return {
+            "stats":        stats,
+            "applications": applications,
+            "manual":       manual_pending,
+            "dream":        dream_activity,
+            "top_pending":  top_pending,
+        }
+    finally:
+        conn.close()
 
 
 # ── HTML sections ─────────────────────────────────────────────────────────────

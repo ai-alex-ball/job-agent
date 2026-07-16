@@ -208,7 +208,10 @@ def build_html_digest(jobs: list[dict]) -> str:
     today = date.today().strftime("%A, %d %B %Y")
     count = len(jobs)
     cards = "".join(_job_card(j) for j in jobs)
-    applied_today = get_applied_jobs_today()
+    try:
+        applied_today = get_applied_jobs_today()
+    except Exception:
+        applied_today = []
     empty = (
         '<div style="text-align:center;color:#6b7280;padding:48px">'
         "No jobs scored 75+ today."

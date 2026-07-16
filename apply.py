@@ -12,11 +12,14 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 
+import json
+
 from config import (
     GMAIL_USER,
     GMAIL_APP_PASSWORD,
     DEFAULT_APPLICATION_EMAIL,
     BASE_DIR,
+    PROFILE_PATH,
 )
 
 # Matches most valid email addresses in free text
@@ -58,7 +61,11 @@ def send_application(job: dict) -> tuple[bool, str]:
         return False, "no_email"
 
     title = job.get("title", "this position")
-    candidate_name = "Jane Doe"
+    try:
+        with open(PROFILE_PATH) as fh:
+            candidate_name = json.load(fh).get("personal", {}).get("name", "")
+    except (FileNotFoundError, json.JSONDecodeError):
+        candidate_name = ""
 
     # ── Build message ────────────────────────────────────────────────────────
     msg = MIMEMultipart()

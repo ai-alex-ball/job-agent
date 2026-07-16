@@ -4,108 +4,166 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Repository Is
 
-An **AI-powered job application agent** for Jane Doe (Innovation/Programme Director targeting £100k+ roles in AI, fintech, and startups). It fetches jobs from Reed and JSearch daily, scores them against the candidate's profile using Claude, stores results in SQLite, and emails an HTML digest of the top matches.
+An **AI-powered job application agent** — a personal template configured for one job seeker's profile and target roles (see `profile.json`). It fetches jobs from Reed, JSearch, Adzuna, and LinkedIn daily, scores them against the candidate's profile using Claude, stores results in SQLite, and emails an HTML digest of the top matches with one-click APPROVE/SKIP buttons.
 
-The primary data source is `profile.json`. The 13 prompt files in `prompts/` drive all AI interactions.
+The primary data backbone is `profile.json`. The 13 prompt files in `prompts/` drive all AI interactions.
 
-## Running the Agent
+## Commands
 
 ```bash
-# Install dependencies
+# Install Python dependencies
 pip install -r requirements.txt
 
-# Copy and fill in credentials
-cp .env.example .env
+# Install Node dependencies (required for CV generation via generate_cv.js)
+npm install
 
 # Run the full daily pipeline
 python main.py
+
+# Check pipeline status and API cost estimate
+python main.py --status
+
+# Ingest jobs without scoring (useful for testing ingestion)
+python main.py --ingest-only
+
+# Batch-process manual_required jobs via browser automation
+python main.py --auto-apply
+
+# Run the approval webhook server (must be running for digest email buttons to work)
+python approvals.py
+
+# Send the weekly summary email manually
+python weekly_summary.py
+
+# Run all tests
+python -m pytest tests/ -v
+
+# Run a single test file
+python -m pytest tests/test_documents.py -v
+
+# Run a single test class or method
+python -m pytest tests/test_documents.py::TestCareerAtAGlance -v
+python -m pytest tests/test_documents.py::TestParseTailoredCv::test_strips_code_fences -v
 ```
 
-## Python Module Responsibilities
+## Cron Schedule
+
+```
+0 8 * * *   python main.py          → logs/cron.log
+0 8 * * 0   python weekly_summary.py → logs/weekly.log
+```
+
+`approvals.py` is started separately via Windows Task Scheduler → `autostart.sh`.
+
+## Architecture
+
+### Pipeline Flow (`main.py`)
+
+```
+init_db → fetch_all_jobs → insert_job (dedupe by URL) → score_job (Claude)
+  → generate_documents → send_digest → sync_to_windows → generate_dashboard → send_heartbeat
+```
+
+### Module Responsibilities
 
 | File | Purpose |
 |------|---------|
-| `main.py` | Orchestrator — runs init → ingest → score → digest in sequence |
-| `ingestion.py` | Fetches jobs from Reed API and JSearch (RapidAPI); normalises to a common dict schema; deduplicates by URL within a batch |
-| `database.py` | SQLite CRUD — `jobs` table with status flow: `new → scored/rejected → digest_sent` |
-| `scoring.py` | Calls Claude with the master pipeline prompt; parses JSON response; handles markdown code-fence stripping |
-| `digest.py` | Builds HTML email digest; sends via Gmail SMTP SSL (port 465); falls back to writing `digest.html` if credentials are missing |
-| `config.py` | All settings loaded from `.env` via `python-dotenv`; single source of truth for model name, thresholds, target roles |
+| `main.py` | Orchestrator; also `--status`, `--ingest-only`, `--auto-apply` modes |
+| `ingestion.py` | Fetches from Reed, JSearch, Adzuna, LinkedIn; applies title pre-filter before Claude |
+| `database.py` | SQLite CRUD; `init_db()` handles schema migrations automatically |
+| `scoring.py` | Calls Claude with master prompt; parses JSON response; enforces `role_type_match` hard gate |
+| `documents.py` | Generates `.docx` CV via `generate_cv.js` (Node) + cover letter via python-docx |
+| `digest.py` | Builds HTML email digest; sends via Gmail SMTP SSL; fires instant dream-employer alerts |
+| `approvals.py` | Flask webhook — handles APPROVE/SKIP/browser-apply button clicks from digest email |
+| `apply.py` | Extracts email from job description text; sends cover letter + `.docx` attachments |
+| `browser_apply.py` | Playwright automation for Greenhouse, Lever (supported), Workday/Amazon (detected, unsupported), generic (best-effort) |
+| `alerts.py` | Pipeline failure emails + heartbeat; always logs to `logs/errors.log` even without SMTP |
+| `weekly_summary.py` | Sunday email: stats, applications sent, manual pending, dream activity, top pending |
+| `dashboard.py` | Generates a local HTML dashboard |
+| `config.py` | All settings from `.env`; single source of truth for model, thresholds, role lists, employer lists |
+| `get_brand_color.py` | Looks up company brand colour for CV accent |
+| `generate_cv.js` | Node.js CV renderer using the `docx` npm package; called as a subprocess by `documents.py` |
 
-## Database Schema
+### Database Schema (`jobs.db`)
 
-Single table `jobs` in `jobs.db`. Key columns:
-- `url TEXT UNIQUE` — primary deduplication key (cross-run)
-- `status` — `new` | `scored` | `rejected` | `digest_sent`
-- `score` — Claude's 0–100 integer; only jobs ≥75 become `scored`
-- `matched_skills`, `skill_gaps`, `red_flags` — stored as JSON arrays
-- `tailored_cv`, `cover_letter` — full text from Claude, only populated when `score ≥ 75`
+Single `jobs` table. Key columns:
+- `url TEXT UNIQUE` — primary dedup key (cross-run)
+- `status` flow: `new → scored/rejected → documents_generated → digest_sent → approved → applied/skipped/manual_required/browser_applied`
+- `score` — Claude's 0–100 integer
+- `matched_skills`, `skill_gaps`, `red_flags`, `dimensions` — JSON arrays
+- `tailored_cv`, `cover_letter` — full text from Claude (only populated when `score ≥ 75`)
+- `approval_token TEXT UNIQUE` — UUID used in digest email button URLs
+- `cv_path`, `cover_letter_path` — paths relative to `BASE_DIR`
+- `dream_employer INTEGER` — set by `scoring.py`, not by Claude
 
-## API Keys Required
+`init_db()` performs additive `ALTER TABLE` migrations so it is safe to run on existing databases.
 
-See `.env.example`. Three external services:
-- **Anthropic** — Claude scoring (`ANTHROPIC_API_KEY`)
-- **Reed** (`REED_API_KEY`) — basic auth; password is always empty
-- **JSearch via RapidAPI** (`JSEARCH_API_KEY`) — `X-RapidAPI-Key` header
-- **Gmail** — requires an App Password, not the account password
+### Scoring & Threshold Logic
+
+- `MIN_SCORE_THRESHOLD = 75` — jobs below this are `rejected`; no documents generated
+- `role_type_match = false` in Claude's JSON → hard reject regardless of score (enforced in `scoring.py`, not the prompt)
+- `dream_employer` flag is computed in Python (`_is_dream_employer`) and triggers an instant email alert via `send_dream_alert()`
+- Dream employer jobs with `score ≥ DREAM_EMPLOYER_MIN_SCORE (60)` appear in the digest even if rejected
+- `MAX_JOBS_PER_RUN = 30` caps daily Claude API spend (~$0.014/job on sonnet-4-6)
+
+### Document Generation
+
+CV rendering has a two-layer architecture:
+1. `documents.py` (`_extract_cv_content`) serialises profile + Claude's structured `tailored_cv` JSON into a plain dict
+2. `generate_cv.js` receives that dict via stdin and renders the styled `.docx` using the npm `docx` library
+
+The `tailored_cv` field from Claude is expected to be a JSON object with `roles`, `projects`, `summary`, and optionally `skills`. `_parse_tailored_cv()` handles code-fence stripping and gracefully falls back to profile bullets if the field is plain text or absent.
+
+### Ingestion Pre-Filter
+
+Before hitting Claude, `ingestion.py` drops jobs using two keyword lists in `config.py`:
+- `TITLE_INCLUDE_KEYWORDS` — title must match at least one (cuts ~80% of API calls)
+- `TITLE_EXCLUDE_KEYWORDS` — hard-reject terms (clinical, legal, construction, etc.)
+
+### LinkedIn Ingestion
+
+LinkedIn is fetched via a local MCP server at `~/linkedin-mcp-server`. The integration uses a custom JSON-RPC handshake (`asyncio` subprocess) and a bespoke parser (`_parse_linkedin_results`) to extract job cards from LinkedIn's innerText format. If the MCP server directory doesn't exist, LinkedIn ingestion is silently skipped.
 
 ## Prompt Architecture
 
-There are three categories of prompts:
-
-**Run once (setup):**
-- `02_achievement_quantifier.md` — Transform raw CV bullets into quantified power bullets (run this first)
-- `04_professional_summary.md` — Generate professional summary options
-- `07_linkedin_optimizer.md` — LinkedIn profile rewrite
-- `09_executive_brand.md`, `10_career_pivot.md`, `12_career_portfolio.md` — Optional positioning work
-
-**Run per application (daily pipeline):**
-- `00_master_pipeline_prompt.md` — The core agent: takes a job description, returns a single JSON object containing job fit score, tailored CV, and cover letter. Prompts 01, 03, and 05 are embedded in this master prompt; reference-only versions exist as standalone files.
-
-**Run on demand (event-triggered):**
-- `06_salary_negotiation.md` — When an offer is received
-- `08_behavioral_interview.md` — When an interview is confirmed
-- `11_case_study_prep.md` — For finance/strategy/consulting interviews
-
-## Master Pipeline Output Schema
-
-`00_master_pipeline_prompt.md` returns this JSON structure:
+**`prompts/00_master_pipeline_prompt.md`** is the only prompt called by the automated pipeline. It returns a single JSON object:
 
 ```json
 {
-  "job_id": "string",
-  "job_title": "string",
-  "company": "string",
+  "job_id", "job_title", "company",
   "scoring": {
-    "overall_score": 0,
+    "overall_score": 0–100,
+    "role_type_match": true/false,
     "matched_skills": [],
     "skill_gaps": [],
     "red_flags": [],
-    "rationale": "string",
-    "proceed": false
+    "dimensions": {},
+    "rationale": "",
+    "proceed": true/false
   },
-  "tailored_cv": "string or null",
+  "tailored_cv": "JSON string or null",
   "cover_letter": "string or null"
 }
 ```
 
-`proceed` is `true` only when `overall_score >= 75`. `tailored_cv` and `cover_letter` are `null` when `proceed = false`.
+`proceed` is only `true` when `overall_score ≥ 75`. Prompts `01`, `03`, `05` are embedded inside the master prompt; the standalone versions are reference copies only.
 
-## profile.json Structure
+## API Keys Required
 
-The candidate profile is the data backbone injected into every prompt. Key sections:
-- `personal_info` — Contact, location, availability
-- `career_preferences` — Target salary (£100k+), industries, role types, work modes
-- `career_history` — 9 roles spanning 2002–present (23 years)
-- `key_metrics` — Headline numbers (88 startups incubated, £12m+ raised, 200+ startups mentored)
-- `skills` — Grouped by category (programme leadership, venture, innovation, technology, AI)
-- `cover_letter_context` — Unique value propositions and positioning statements
-- `ai_safety_views` — Candidate's stance on responsible AI (relevant for Anthropic-aligned roles)
+Four external services (all via `.env`):
+- `ANTHROPIC_API_KEY` — Claude scoring
+- `REED_API_KEY` — basic auth; password is always empty
+- `JSEARCH_API_KEY` — RapidAPI key; free tier = 200 req/month (6 roles × 30 days = 180)
+- `ADZUNA_APP_ID` + `ADZUNA_APP_KEY`
+- `GMAIL_USER` + `GMAIL_APP_PASSWORD` — requires a Gmail App Password, not account password
+- `APPROVAL_BASE_URL` — must point to where `approvals.py` is reachable from your email client (default: `http://localhost:5000`)
 
 ## Working in This Repo
 
-When updating prompts, maintain the existing structure: persona introduction → task specification → output format → data placeholder. Placeholders use the pattern `[THIS SECTION IS AUTO-POPULATED FROM ... AT RUNTIME]`.
+**Updating prompts:** maintain the pattern — persona → task → output format → data placeholder. Placeholders use `[THIS SECTION IS AUTO-POPULATED FROM ... AT RUNTIME]`.
 
-When updating `profile.json`, keep the key metrics section in sync with career history (metrics are derived from roles, not stored separately).
+**Updating `profile.json`:** keep `key_metrics` in sync with `career_history` (metrics are derived from roles, not stored independently).
 
-The `master_cv.docx` is a binary file — do not attempt to edit it programmatically.
+**`master_cv.docx`** is a binary reference file — do not edit programmatically.
+
+**Documents sync to Windows** at `/mnt/c/Users/Public/Documents/JobAgent` after each pipeline run (WSL environment).

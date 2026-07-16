@@ -1,4 +1,5 @@
 import json
+import time
 import anthropic
 from config import (
     ANTHROPIC_API_KEY, CLAUDE_MODEL, CLAUDE_HAIKU_MODEL,
@@ -20,6 +21,23 @@ _PROFILE_SECTION = f"## CANDIDATE PROFILE\n\n{json.dumps(_PROFILE, indent=2)}\n\
 _STAGE1_SYSTEM = f"{_SCORING_PROMPT}\n\n{_PROFILE_SECTION}"
 
 _CACHE_HEADER = {"anthropic-beta": "prompt-caching-2024-07-31"}
+
+_MAX_RETRIES = 4
+_RETRY_BASE_DELAY = 5  # seconds; doubles each attempt: 5, 10, 20, 40
+
+
+def _with_retry(fn):
+    """Call fn(), retrying up to _MAX_RETRIES times on 529 overload with exponential backoff."""
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            return fn()
+        except anthropic.APIStatusError as e:
+            if e.status_code == 529 and attempt < _MAX_RETRIES:
+                delay = _RETRY_BASE_DELAY * (2 ** attempt)
+                print(f"[Scoring] API overloaded (529) — retry {attempt + 1}/{_MAX_RETRIES} in {delay}s")
+                time.sleep(delay)
+            else:
+                raise
 
 
 def _is_dream_employer(company: str) -> bool:
@@ -84,9 +102,9 @@ def _parse_json(raw: str) -> dict:
 def _stage1_score(job: dict) -> dict | None:
     """Stage 1: Haiku scoring only. Returns parsed result or None on error."""
     try:
-        response = _client().messages.create(
+        response = _with_retry(lambda: _client().messages.create(
             model=CLAUDE_HAIKU_MODEL,
-            max_tokens=1024,
+            max_tokens=2048,
             system=[{
                 "type": "text",
                 "text": _STAGE1_SYSTEM,  # scoring prompt + profile, ~4,900 tokens — above Haiku cache threshold
@@ -94,7 +112,7 @@ def _stage1_score(job: dict) -> dict | None:
             }],
             messages=[{"role": "user", "content": _build_job_section(job)}],
             extra_headers=_CACHE_HEADER,
-        )
+        ))
         _log_cache(response.usage)
         return _parse_json(response.content[0].text)
     except json.JSONDecodeError as e:
@@ -108,7 +126,7 @@ def _stage1_score(job: dict) -> dict | None:
 def _stage2_score(job: dict) -> dict | None:
     """Stage 2: Sonnet re-score for accuracy. Returns parsed scoring result or None."""
     try:
-        response = _client().messages.create(
+        response = _with_retry(lambda: _client().messages.create(
             model=CLAUDE_MODEL,
             max_tokens=1024,
             system=[{
@@ -118,7 +136,7 @@ def _stage2_score(job: dict) -> dict | None:
             }],
             messages=[{"role": "user", "content": _build_job_section(job)}],
             extra_headers=_CACHE_HEADER,
-        )
+        ))
         _log_cache(response.usage)
         result = _parse_json(response.content[0].text)
 
@@ -157,7 +175,7 @@ def generate_cv_and_cover_letter(job: dict) -> tuple[str | None, str | None]:
     Returns (tailored_cv_json_str, cover_letter_text) or (None, None) on error.
     """
     try:
-        response = _client().messages.create(
+        response = _with_retry(lambda: _client().messages.create(
             model=CLAUDE_MODEL,
             max_tokens=4096,
             system=[{
@@ -177,7 +195,7 @@ def generate_cv_and_cover_letter(job: dict) -> tuple[str | None, str | None]:
                 },
             ]}],
             extra_headers=_CACHE_HEADER,
-        )
+        ))
         _log_cache(response.usage)
         result = _parse_json(response.content[0].text)
         tailored_cv = result.get("tailored_cv")

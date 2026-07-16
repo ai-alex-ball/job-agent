@@ -96,12 +96,16 @@ def _parse_tailored_cv(tailored_cv_text: str | None) -> dict | None:
     if not tailored_cv_text:
         return None
     try:
-        text = tailored_cv_text.strip()
-        # Strip markdown code fences Claude sometimes wraps JSON in
-        if text.startswith("```"):
-            lines = text.split("\n")
-            text = "\n".join(lines[1:-1])
-        data = json.loads(text)
+        # Already parsed (dict) when coming directly from score_job result
+        if isinstance(tailored_cv_text, dict):
+            data = tailored_cv_text
+        else:
+            text = tailored_cv_text.strip()
+            # Strip markdown code fences Claude sometimes wraps JSON in
+            if text.startswith("```"):
+                lines = text.split("\n")
+                text = "\n".join(lines[1:-1])
+            data = json.loads(text)
         if isinstance(data, dict) and "roles" in data:
             return data
     except (json.JSONDecodeError, ValueError):

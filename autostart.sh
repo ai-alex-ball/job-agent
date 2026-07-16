@@ -2,8 +2,11 @@
 # autostart.sh — used by Windows Task Scheduler via VBScript.
 # Runs Flask in the FOREGROUND so that wsl.exe stays alive.
 # (Backgrounding with & causes WSL to terminate the process when the session exits.)
-
-cd /home/theboss/job-agent
+#
+# EDIT THIS: set to the absolute path of your job-agent clone
+# (Windows Task Scheduler invokes this via wsl.exe with a fixed cwd, so it
+# can't rely on $(dirname "$0") the way start.sh does).
+cd /path/to/job-agent
 
 # Kill any previous instance
 if [ -f .approvals.pid ]; then

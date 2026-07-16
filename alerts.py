@@ -9,7 +9,7 @@ from pathlib import Path
 
 from config import GMAIL_USER, GMAIL_APP_PASSWORD, DREAM_ALERT_RECIPIENT
 
-ALERT_RECIPIENT = DREAM_ALERT_RECIPIENT   # jobseeker@example.com
+ALERT_RECIPIENT = DREAM_ALERT_RECIPIENT   # set via DREAM_ALERT_RECIPIENT env var
 ERROR_LOG = Path(__file__).parent / "logs" / "errors.log"
 
 

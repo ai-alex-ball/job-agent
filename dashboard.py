@@ -62,6 +62,7 @@ def _status_badge(status: str) -> str:
         "approved":           ("badge-amber",  "Approved"),
         "manual_required":    ("badge-orange", "Manual req."),
         "rejected":           ("badge-gray",   "Rejected"),
+        "rejected_after_apply": ("badge-gray", "Rejected after apply"),
         "skipped":            ("badge-gray",   "Skipped"),
         "new":                ("badge-gray",   "New"),
     }
@@ -107,7 +108,7 @@ def _fetch_data() -> dict:
                cv_path, cover_letter_path, rationale, platform
         FROM jobs
         WHERE score IS NOT NULL
-        ORDER BY created_at DESC
+        ORDER BY score DESC, created_at DESC
     """).fetchall()]
 
     # Pipeline tab — 75+ jobs
@@ -289,15 +290,22 @@ def _html_funnel(f: dict) -> str:
 
 def _html_apps_table(apps: list[dict]) -> str:
     rows = ""
-    for j in apps:
+    for i, j in enumerate(apps):
         status = j.get("status", "")
         dream  = j.get("dream_employer", 0)
         score  = j.get("score")
         url    = _esc(j.get("url", "#"))
         ds     = "dream" if dream else "nodream"
-        # data-status for JS filtering
+        # sort keys: score/-1 for nulls, numeric salary, ISO date, lowercased text
+        sk_score   = score if score is not None else -1
+        sk_salary  = j.get("salary_min") or 0
+        sk_date    = (j.get("created_at") or "")[:10]
+        sk_company = _esc((j.get("company") or "").lower())
+        sk_role    = _esc((j.get("title") or "").lower())
         rows += f"""
-<tr data-status="{_esc(status)}" data-dream="{ds}">
+<tr data-status="{_esc(status)}" data-dream="{ds}" data-default-order="{i}"
+    data-score="{sk_score}" data-company="{sk_company}" data-role="{sk_role}"
+    data-salary="{sk_salary}" data-date="{sk_date}">
   <td class="tc">{_score_badge(score)}</td>
   <td class="tc">{"⭐" if dream else ""}</td>
   <td>{_esc(j.get("company"))}</td>
@@ -320,8 +328,14 @@ def _html_apps_table(apps: list[dict]) -> str:
     <table id="apps-table">
       <thead>
         <tr>
-          <th>Score</th><th>⭐</th><th>Company</th><th>Role</th>
-          <th>Salary</th><th>Date</th><th>Status</th><th>Link</th>
+          <th class="sortable" data-col="score" data-numeric="1" onclick="sortApps(this)">Score</th>
+          <th>⭐</th>
+          <th class="sortable" data-col="company" onclick="sortApps(this)">Company</th>
+          <th class="sortable" data-col="role" onclick="sortApps(this)">Role</th>
+          <th class="sortable" data-col="salary" data-numeric="1" onclick="sortApps(this)">Salary</th>
+          <th class="sortable" data-col="date" onclick="sortApps(this)">Date</th>
+          <th class="sortable" data-col="status" onclick="sortApps(this)">Status</th>
+          <th>Link</th>
         </tr>
       </thead>
       <tbody>{rows}</tbody>
@@ -520,6 +534,10 @@ table { width: 100%; border-collapse: collapse; background: #fff;
         border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
 th { padding: 8px 12px; font-size: 11px; font-weight: 700; color: #6b7280;
      text-align: left; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { background: #eff6ff; color: #374151; }
+th.sort-asc::after  { content: ' ↑'; color: #2563eb; font-weight: 400; }
+th.sort-desc::after { content: ' ↓'; color: #2563eb; font-weight: 400; }
 td { padding: 9px 12px; border-top: 1px solid #f3f4f6; vertical-align: middle; }
 tr:hover td { background: #fafafa; }
 .tc { text-align: center; }
@@ -578,6 +596,45 @@ function filterApps(btn, filter) {
     if (filter === 'dream')   show = dream;
     row.style.display = show ? '' : 'none';
   });
+}
+
+let _sortCol = null, _sortDir = 0;
+
+function sortApps(th) {
+  const col = th.dataset.col;
+  const numeric = th.dataset.numeric === '1';
+
+  // Cycle: new col → asc; same col asc → desc; same col desc → reset default
+  if (_sortCol === col) {
+    if (_sortDir === 1) _sortDir = -1;
+    else { _sortDir = 0; _sortCol = null; }
+  } else {
+    _sortCol = col;
+    _sortDir = 1;
+  }
+
+  // Update header indicators
+  document.querySelectorAll('#apps-table th[data-col]').forEach(h =>
+    h.classList.remove('sort-asc', 'sort-desc')
+  );
+  if (_sortDir !== 0) {
+    th.classList.add(_sortDir === 1 ? 'sort-asc' : 'sort-desc');
+  }
+
+  const tbody = document.querySelector('#apps-table tbody');
+  const rows  = Array.from(tbody.querySelectorAll('tr'));
+
+  if (_sortDir === 0) {
+    // Restore original SQL order (score desc)
+    rows.sort((a, b) => +a.dataset.defaultOrder - +b.dataset.defaultOrder);
+  } else {
+    rows.sort((a, b) => {
+      const av = a.dataset[col], bv = b.dataset[col];
+      if (numeric) return _sortDir * ((+av || 0) - (+bv || 0));
+      return _sortDir * av.localeCompare(bv);
+    });
+  }
+  rows.forEach(r => tbody.appendChild(r));
 }
 """
 

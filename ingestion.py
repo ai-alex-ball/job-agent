@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -9,6 +10,9 @@ import requests
 from config import (
     REED_API_KEY,
     JSEARCH_API_KEY,
+    ADZUNA_APP_ID,
+    ADZUNA_APP_KEY,
+    ADZUNA_MIN_SALARY,
     TARGET_ROLES,
     JSEARCH_ROLES,
     LOCATION,
@@ -32,6 +36,7 @@ def fetch_reed_jobs() -> list[dict]:
 
     jobs = []
     base_url = "https://www.reed.co.uk/api/1.0/search"
+    cutoff = datetime.now() - timedelta(days=3)
 
     for role in TARGET_ROLES:
         try:
@@ -49,6 +54,16 @@ def fetch_reed_jobs() -> list[dict]:
             )
             resp.raise_for_status()
             for item in resp.json().get("results", []):
+                # Skip stale postings — Reed sorts by relevance so old jobs
+                # dominate results; only fresh postings are worth re-checking.
+                date_str = item.get("date", "")
+                if date_str:
+                    try:
+                        posted = datetime.strptime(date_str, "%d/%m/%Y")
+                        if posted < cutoff:
+                            continue
+                    except ValueError:
+                        pass
                 jobs.append(_normalize_reed(item))
         except Exception as e:
             print(f"[Reed] Error fetching '{role}': {e}")
@@ -96,11 +111,14 @@ def fetch_jsearch_jobs() -> list[dict]:
                 params={
                     "query": f"{role} {LOCATION} UK",
                     "num_pages": "1",
-                    "date_posted": "today",
+                    "date_posted": "3days",
                     "country": "GB",
                 },
                 timeout=15,
             )
+            if resp.status_code == 429:
+                print("[JSearch] WARNING: quota exhausted (429) — skipping all remaining JSearch queries")
+                break
             resp.raise_for_status()
             for item in resp.json().get("data", []):
                 jobs.append(_normalize_jsearch(item))
@@ -126,6 +144,68 @@ def _normalize_jsearch(item: dict) -> dict:
         "date_posted": item.get("job_posted_at_datetime_utc", ""),
     }
 
+
+# ---------------------------------------------------------------------------
+# Adzuna API
+# ---------------------------------------------------------------------------
+
+def fetch_adzuna_jobs() -> list[dict]:
+    if not ADZUNA_APP_ID or not ADZUNA_APP_KEY:
+        print("[Adzuna] ADZUNA_APP_ID/KEY not set — skipping")
+        return []
+
+    jobs = []
+    base_url = "https://api.adzuna.com/v1/api/jobs/gb/search/1"
+
+    for role in TARGET_ROLES:
+        try:
+            resp = requests.get(
+                base_url,
+                params={
+                    "app_id": ADZUNA_APP_ID,
+                    "app_key": ADZUNA_APP_KEY,
+                    "results_per_page": RESULTS_PER_QUERY,
+                    "what": role,
+                    "where": LOCATION,
+                    "distance": 30,
+                    "salary_min": ADZUNA_MIN_SALARY,
+                },
+                timeout=15,
+            )
+            if resp.status_code == 429:
+                print("[Adzuna] WARNING: quota exhausted (429) — skipping all remaining Adzuna queries")
+                break
+            resp.raise_for_status()
+            for item in resp.json().get("results", []):
+                jobs.append(_normalize_adzuna(item))
+        except Exception as e:
+            print(f"[Adzuna] Error fetching '{role}': {e}")
+
+    return jobs
+
+
+def _normalize_adzuna(item: dict) -> dict:
+    adzuna_id = str(item.get("id", ""))
+    # Use a stable canonical URL based on the Adzuna job ID to avoid
+    # re-ingesting the same job when Adzuna rotates the `se=` tracking param.
+    url = (
+        f"https://www.adzuna.co.uk/jobs/details/{adzuna_id}"
+        if adzuna_id
+        else item.get("redirect_url", "")
+    )
+    return {
+        "job_id": adzuna_id,
+        "platform": "adzuna",
+        "title": item.get("title", ""),
+        "company": item.get("company", {}).get("display_name", ""),
+        "location": item.get("location", {}).get("display_name", ""),
+        "salary_min": item.get("salary_min"),
+        "salary_max": item.get("salary_max"),
+        "salary_currency": "GBP",
+        "description": item.get("description", ""),
+        "url": url,
+        "date_posted": item.get("created", ""),
+    }
 
 # ---------------------------------------------------------------------------
 # LinkedIn via MCP server
@@ -398,21 +478,41 @@ def _title_excluded(title: str) -> bool:
 
 def fetch_all_jobs() -> list[dict]:
     print("[Ingestion] Fetching from Reed...")
-    reed_jobs = fetch_reed_jobs()
+    try:
+        reed_jobs = fetch_reed_jobs()
+    except Exception as e:
+        print(f"[Ingestion] Reed fetch failed: {e}")
+        reed_jobs = []
     print(f"[Ingestion] Reed: {len(reed_jobs)} jobs fetched")
 
     print("[Ingestion] Fetching from JSearch...")
-    jsearch_jobs = fetch_jsearch_jobs()
+    try:
+        jsearch_jobs = fetch_jsearch_jobs()
+    except Exception as e:
+        print(f"[Ingestion] JSearch fetch failed: {e}")
+        jsearch_jobs = []
     print(f"[Ingestion] JSearch: {len(jsearch_jobs)} jobs fetched")
 
+    print("[Ingestion] Fetching from Adzuna...")
+    try:
+        adzuna_jobs = fetch_adzuna_jobs()
+    except Exception as e:
+        print(f"[Ingestion] Adzuna fetch failed: {e}")
+        adzuna_jobs = []
+    print(f"[Ingestion] Adzuna: {len(adzuna_jobs)} jobs fetched")
+
     print("[Ingestion] Fetching from LinkedIn...")
-    linkedin_jobs = fetch_linkedin_jobs()
+    try:
+        linkedin_jobs = fetch_linkedin_jobs()
+    except Exception as e:
+        print(f"[Ingestion] LinkedIn fetch failed: {e}")
+        linkedin_jobs = []
     print(f"[Ingestion] LinkedIn: {len(linkedin_jobs)} jobs fetched")
 
     # Deduplicate within this batch by URL
     seen: set[str] = set()
     unique: list[dict] = []
-    for job in reed_jobs + jsearch_jobs + linkedin_jobs:
+    for job in reed_jobs + jsearch_jobs + adzuna_jobs + linkedin_jobs:
         url = job.get("url", "")
         if url and url not in seen:
             seen.add(url)

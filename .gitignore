@@ -3,7 +3,28 @@ __pycache__/
 *.pyc
 *.pyo
 jobs.db
+*.db
 logs/
 outputs/
-*.Zone.Identifier
+applications/
+*:Zone.Identifier
 .approvals.pid
+node_modules/
+profile.json
+master_cv.docx
+dashboard.html
+
+# Local Claude Code settings (machine-specific)
+.claude/settings.local.json
+
+# One-off personal application scripts and internal dev notes — not part of
+# the general-purpose pipeline, contain personal application details
+_generate_*.py
+docs/plans/
+digest_phase3_preview.html
+
+# Internal working notes for AI-assisted development sessions — not
+# user-facing project documentation
+CLAUDE_CODE_HANDOFF.md
+CONTEXT.md
+TODOS.md

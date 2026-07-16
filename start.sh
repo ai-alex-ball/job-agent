@@ -3,6 +3,7 @@
 # Usage: bash ~/job-agent/start.sh
 
 set -e
+export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 cd "$(dirname "$0")"
 
 # Kill any previous instance that's still running
@@ -22,5 +23,5 @@ echo $! > .approvals.pid
 echo ""
 echo "  Job agent running — approval server on localhost:5000"
 echo "  PID $(cat .approvals.pid) saved to .approvals.pid"
-echo "  To stop: kill \$(cat ~/job-agent/.approvals.pid)"
+echo "  To stop: kill \$(cat \"$(dirname "$0")/.approvals.pid\")"
 echo ""

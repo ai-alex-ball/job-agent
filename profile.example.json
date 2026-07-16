@@ -1,0 +1,253 @@
+{
+  "_readme": "This is a sanitized example profile. Copy this file to profile.json (which is gitignored) and replace every field with your own real details. profile.json is the data backbone for all prompts in prompts/ — the more complete and specific it is, the better Claude's scoring and tailored CV/cover letter generation will be.",
+
+  "personal": {
+    "name": "Jordan Rivers",
+    "location": "London, UK",
+    "email": "jordan.rivers@example.com",
+    "phone": "07700 900123",
+    "linkedin": "https://www.linkedin.com/in/jordan-rivers-example/",
+    "website": "https://www.jordanrivers.example",
+    "right_to_work": "UK",
+    "available": "immediately",
+    "notice_period": "one month"
+  },
+
+  "job_preferences": {
+    "target_salary_min": 100000,
+    "target_salary_currency": "GBP",
+    "open_to_equity": true,
+    "work_type": ["remote", "hybrid", "office"],
+    "locations": ["London"],
+    "open_to_relocation": false,
+    "company_stage": ["corporate", "scale-up"],
+    "industries": [
+      "artificial intelligence",
+      "financial services",
+      "fintech",
+      "technology",
+      "innovation",
+      "venture capital",
+      "accelerators",
+      "startups"
+    ],
+    "excluded_industries": [
+      "anything outside of financial services, tech, innovation, and startups"
+    ],
+    "target_roles": [
+      "Programme Director",
+      "Innovation Lead",
+      "Innovation Director",
+      "Head of Innovation",
+      "Startup Programme Lead",
+      "Venture Programme Director",
+      "Strategic Partnerships Director",
+      "Developer Ecosystem Lead",
+      "Chief Innovation Officer",
+      "VP Innovation",
+      "Startup Coach",
+      "Accelerator Lead",
+      "Head of Ventures"
+    ],
+    "dream_employers": [
+      "Anthropic",
+      "Google DeepMind",
+      "Microsoft AI",
+      "Cohere",
+      "Mistral",
+      "HSBC",
+      "Lloyds Banking Group",
+      "NatWest",
+      "KPMG",
+      "Deloitte",
+      "McKinsey",
+      "Entrepreneur First",
+      "Seedcamp",
+      "Wayra"
+    ],
+    "day_to_day_feel": "Excited to wake up and get to work every day — energised by the mission, the team, and the problems being solved",
+    "career_motivation": "Returning to a corporate or scale-up environment after several years in startups — seeking stability, career progression, and the resources to do things properly"
+  },
+
+  "summary": "Innovator and programme leader with 15 years' experience building and scaling technology-driven ventures across finance, AI, and startup ecosystems. Proven track record running innovation programmes at scale — dozens of startups incubated, multi-million-pound portfolios raised and managed. Deep expertise in AI incubation, accelerator design, venture building, and corporate innovation. Passionate about responsible AI development and harnessing technology for real-world impact.",
+
+  "ai_safety_views": {
+    "summary": "Strong advocate for responsible AI development with direct experience of the risks of moving too fast. Having worked with dozens of startups across AI, has seen firsthand how moving fast in sandboxed experiments is acceptable — but the moment a product crosses into real users, real data, or real consequences, rigorous safeguards are non-negotiable.",
+    "key_positions": [
+      "Move fast is fine in sandboxes with no real users or sensitive data — but crossing into production requires a completely different mindset",
+      "Data security and privacy must be designed in from day one, not bolted on",
+      "AI guardrails must be use-case specific — a one-size-fits-all approach is insufficient",
+      "Public vs private data distinctions are critical and often overlooked by early-stage teams",
+      "Responsible AI is a competitive advantage, not a constraint — it builds trust with users, regulators, and investors",
+      "Founders need education on AI safety as much as they need help with product and fundraising"
+    ],
+    "relevance_to_anthropic": "These views are directly aligned with Anthropic's mission of AI safety for the long-term benefit of humanity. Experience running AI incubator programmes gives a unique perspective on where safety failures originate — at the founder level — and how to address them structurally through programme design."
+  },
+
+  "career_history": [
+    {
+      "company": "Example Ventures",
+      "location": "London",
+      "title": "Programme Director",
+      "start": "2021",
+      "end": "present",
+      "type": "full-time",
+      "achievements": [
+        "Designed and delivered 8 AI-focused incubator cohorts, generating 40 funded startups in 4 years",
+        "Mentored 40 founders from pre-revenue to fundraise-ready; portfolio collectively raised £5m+",
+        "Led cross-functional global teams of 6+ across Directors, Developers, Designers, and Operations",
+        "Supported founders in building MVPs, securing investment, and scaling products to market"
+      ]
+    },
+    {
+      "company": "Example Bank plc",
+      "location": "London",
+      "title": "Innovation Programmes Manager",
+      "start": "2017",
+      "end": "2021",
+      "type": "full-time",
+      "achievements": [
+        "Directed a corporate accelerator programme across 3 international locations",
+        "Managed an alumni portfolio of 60+ companies",
+        "Architected and launched a £5m follow-on investment vehicle",
+        "Engaged C-suite executives, business sponsors, and global investors to deliver strategic alignment across programmes"
+      ]
+    },
+    {
+      "company": "Example Fintech Group",
+      "location": "Amsterdam",
+      "title": "Fintech Consultant",
+      "start": "2014",
+      "end": "2017",
+      "type": "full-time",
+      "achievements": [
+        "Evaluated 100+ fintech partnerships annually, selecting and onboarding the top 5% for strategic integration",
+        "Delivered 30 proofs-of-concept in under 24 months using a fast-track/fail-fast innovation model",
+        "Converted 15% of PoCs into commercial agreements and venture investments"
+      ]
+    },
+    {
+      "company": "Example Technology Services",
+      "location": "London",
+      "title": "IT Infrastructure Support Analyst",
+      "start": "2010",
+      "end": "2014",
+      "type": "full-time",
+      "achievements": [
+        "Provided technical implementation and support across business functions in a major financial services group"
+      ]
+    }
+  ],
+
+  "ai_certifications": [
+    {"issuer": "Anthropic", "title": "Claude Code in Action", "year": 2026, "status": "Complete"},
+    {"issuer": "Anthropic", "title": "Claude 101", "year": 2026, "status": "Complete"},
+    {"issuer": "Anthropic", "title": "AI Fluency: Framework & Foundations", "year": 2026, "status": "Complete"}
+  ],
+
+  "education": [
+    "BSc Computer Science (Hons) — Example University",
+    "PRINCE2 Foundation Certification"
+  ],
+
+  "skills": {
+    "programme_leadership": [
+      "Accelerator design and delivery",
+      "Incubator programme management",
+      "Cohort design and curation",
+      "Portfolio management",
+      "Programme Director",
+      "Innovation at scale"
+    ],
+    "venture_and_investment": [
+      "Venture building",
+      "Early-stage investment",
+      "Startup evaluation",
+      "Due diligence",
+      "Portfolio management",
+      "Fundraising support",
+      "Investor relations",
+      "Fund design"
+    ],
+    "innovation": [
+      "Corporate innovation",
+      "Fast-track/fail-fast methodology",
+      "Lean startup",
+      "Agile delivery",
+      "PoC design and delivery",
+      "Innovation operating models",
+      "Go-to-market strategy",
+      "Product-market fit"
+    ],
+    "technology": [
+      "Artificial intelligence",
+      "Fintech",
+      "MVP development",
+      "Tech stack evaluation",
+      "Computer science"
+    ],
+    "leadership": [
+      "Global team leadership",
+      "C-suite stakeholder management",
+      "Cross-functional team building",
+      "Founder mentoring and coaching",
+      "Strategic advisory",
+      "Public speaking",
+      "Workshop facilitation"
+    ],
+    "ai_specific": [
+      "AI programme design",
+      "AI use case validation",
+      "Responsible AI frameworks",
+      "AI safety awareness",
+      "AI incubation",
+      "LLM application strategy",
+      "AI product strategy"
+    ]
+  },
+
+  "key_metrics": {
+    "years_experience": 15,
+    "startups_mentored": 60,
+    "startups_incubated": 40,
+    "portfolio_raised": "£5m+",
+    "portfolio_market_cap_managed": "$1B+",
+    "pocs_delivered": 30,
+    "commercial_agreements": 6,
+    "venture_investments_facilitated": 2,
+    "cost_savings_delivered": "£1m",
+    "investment_fund_designed": "£5m",
+    "funding_raised_as_founder": "£500k"
+  },
+
+  "notable_achievements": [
+    "Managed a $1B+ startup portfolio across 60+ companies",
+    "Delivered £1m cost savings through operational redesign",
+    "15% PoC-to-commercial conversion rate — above industry benchmark",
+    "Designed a £5m follow-on investment fund from scratch"
+  ],
+
+  "personal_brand": {
+    "tagline": "The Founder's Champion",
+    "methodology": "Discovery, Strategic Alignment, Rapid Prototyping, Growth Activation, Continuous Evolution",
+    "philosophy": "I don't believe in technology for technology's sake. I believe in using the right tools to solve real problems and create exceptional user experiences.",
+    "testimonials": [
+      {
+        "name": "Sam Example",
+        "company": "Example Startup Inc",
+        "quote": "Jordan's ability to quickly understand our business and provide strategic guidance around our AI implementation was incredible."
+      },
+      {
+        "name": "Morgan Example",
+        "company": "Example Labs",
+        "quote": "Working with Jordan was a game-changer for our startup. The approach helped us communicate our value proposition to investors in a way that resonated."
+      }
+    ]
+  },
+
+  "cover_letter_context": {
+    "why_leaving_startups": "After several years in the startup ecosystem, seeking the stability, resources, and career progression that a corporate or scale-up environment provides — while bringing the speed, rigour, and founder empathy of the startup world along.",
+    "why_anthropic_specifically": "Anthropic's mission of responsible AI development for the long-term benefit of humanity is directly aligned with views formed through real experience — having seen firsthand how AI safety failures happen at the founder level and how they can be addressed through programme design and education.",
+    "unique_value": "The combination of corporate innovation, founder experience, and large-scale programme delivery is genuinely rare. Most candidates have one of these — this profile has all three."
+  }
+}
